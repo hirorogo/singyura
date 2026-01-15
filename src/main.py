@@ -260,8 +260,8 @@ class State:
     def is_done(self):
         """ゲーム終了判定: 勝者（手札0）が出たか、または残り1人になったら終了"""
         # 手札がなくなったプレイヤーがいれば終了
-        for hand in self.players_cards:
-            if len(hand) == 0:
+        for i, hand in enumerate(self.players_cards):
+            if len(hand) == 0 and i not in self.out_player:
                 return True
         
         # バースト等で残り1人になったら終了
