@@ -276,7 +276,7 @@ class State:
         if pass_flag == 1 or action is None:
             # パス処理
             self.pass_count[p_idx] += 1
-            if self.pass_count[p_idx] >= 3:
+            if self.pass_count[p_idx] > 3:
                 # バースト処理
                 # 手札をすべて場に出す
                 hand = self.players_cards[p_idx]
@@ -319,132 +319,139 @@ class State:
         # ここに来るのは全員アウトの場合のみ
 
 
-# --- 最強AI実装 (HybridAI: God-Lock Rule + PIMC) ---
+# --- 最強AI実装 (Hybrid: Rule-Based + PIMC) ---
 
-class HybridAI:
+class HybridStrongestAI:
     def __init__(self, my_player_num, simulation_count=50):
         self.my_player_num = my_player_num
         self.simulation_count = simulation_count
 
     def get_action(self, state):
         my_actions = state.my_actions()
-        my_hand = state.players_cards[self.my_player_num]
         
-        # 0. 選択肢がない場合（パス or 1枚しかない）
+        # 選択肢がない場合（パス確定）
         if not my_actions:
             return None, 1
-            
-        # --- 戦略的フィルタリング (Rule-based) ---
+        
+        # --- 戦略的フィルタリング (God-Lock) ---
+        # 「安全な手（Safe）」と「危険な手（Risky）」に分類する
+        # Safe: 出しても自分がその次のカード（内側への繋がり）を持っている。主導権を維持できる。
+        # Risky: 出すと次のカードを持っていない。他プレイヤーに手番を渡す可能性がある（ロック解除）。
+        
+        safe_moves = []
+        risky_moves = []
+        
+        hand_card_strs = [str(c) for c in state.players_cards[self.my_player_num]]
+        
+        for action in my_actions:
+            if self._is_safe_move(action, hand_card_strs):
+                safe_moves.append(action)
+            else:
+                risky_moves.append(action)
+                
+        # 候補手の決定
         candidates = []
         
-        # 1. God-Lock判定: 敵が瀕死なら、絶対に助けないモード発動
-        if self._detect_god_lock(state):
-            # 安全な手（相手を利さない手）のみを抽出
-            safe_moves = [a for a in my_actions if self._is_safe_move(a, my_hand)]
-            
-            if safe_moves:
-                candidates = safe_moves
-            else:
-                # 安全な手がない場合、パスが可能か確認
-                my_pass_count = state.pass_count[self.my_player_num]
-                if my_pass_count < 3:
-                    # パスして敵自滅を待つ (戦略的パス)
-                    candidates = [None]
-                else:
-                    # パスもできないなら仕方なく全ての手が候補
-                    candidates = my_actions
+        # 戦略： 安全な手があるなら、危険な手は考慮せず安全な手を優先（ロック維持）
+        if safe_moves:
+            candidates = safe_moves
+            # 安全な手の中でも、より良いものをPIMCで選ぶ
+            # (例: 他の人をより苦しめる方など。ただしSafeなら基本どれでもOKなので全候補でよい)
         else:
-            # 2. 平時はPIMC Simulationで判断
-            candidates = my_actions
-
-        # 候補が単一かつパスの場合
-        if len(candidates) == 1 and candidates[0] is None:
-            print("HybridAI: Strategic PASS executed (God-Lock).")
-            return None, 1
+            # 安全な手がない場合、仕方なく危険な手を検討する
+            candidates = risky_moves
             
-        # 候補が絞られた状態でPIMC実行
-        # candidatesリストにあるアクションのみをScore計算する
-        best_action, should_pass = self._run_pimc(state, candidates)
+            # 【重要】もしパスが可能なら、あえてパスをしてロックを維持する選択肢を追加
+            if state.pass_count[self.my_player_num] < 3:
+                candidates.append(None) # None はパスを表す
+
+        # 唯一の候補なら即決 (パスのみ、あるいは1枚のみ)
+        if len(candidates) == 1:
+            if candidates[0] is None:
+                return None, 1 # 戦略的パス
+            return candidates[0], 0
+
+        # --- PIMC (Perfect Information Monte Carlo) ---
+        # 候補手の中からシミュレーションで最善手を選ぶ
         
-        return best_action, should_pass
-
-    def _detect_god_lock(self, state):
-        """
-        神の一手（God-Lock）モードを発動すべきか判定する
-        判定基準: 敵の誰かがバースト寸前（パス回数が上限-1）であること
-        """
-        for i in range(state.players_num):
-            if i != self.my_player_num and i not in state.out_player:
-                # パス回数が2回以上（3回でバーストなので、あと1回）
-                if state.pass_count[i] >= 2:
-                    return True
-        return False
-
-    def _is_safe_move(self, card, hand):
-        """そのカードを出すことが『安全』か判定する
-        安全の定義:
-        1. 数字がA(1)またはK(13)である（その先にカードがない）
-        2. 出した後、その次の数字を自分が持っている（ロック継続）
-        """
-        val = card.number.val
-        if val == 1 or val == 13:
-            return True
-            
-        # 次の数字を求める
-        next_val = -1
-        if val < 7:
-            next_val = val - 1 # 6 -> 5
-        else:
-            next_val = val + 1 # 8 -> 9
-            
-        # EnumからCard生成して判定
-        next_enum = None
-        for n in Number:
-            if n.val == next_val:
-                next_enum = n
-                break
-                
-        if next_enum:
-            next_card = Card(card.suit, next_enum)
-            if hand.check(next_card):
-                return True
-                
-        return False
-
-    def _run_pimc(self, state, candidates):
-        # アクションのスコア初期化
         action_scores = {action: 0 for action in candidates}
         
-        # 1. 未知のカードを特定する
+        # 1. 未知のカードを特定
         unknown_cards = self._get_unknown_cards(state)
         
         # 2. シミュレーション実行
         for _ in range(self.simulation_count):
-            # 2-1. 確定化 (Determinization)
+            # 決定化
             determinized_state = self._create_determinized_state(state, unknown_cards)
             
-            # 2-2. 各候補アクションについてプレイアウト
             for first_action in candidates:
-                # 状態をコピー
                 sim_state = determinized_state.clone()
                 
-                # 自分の手
-                sim_state.next(first_action, 0)
+                # 自分の一手
+                if first_action is None:
+                    # パスを行う
+                    sim_state.next(None, 1)
+                else:
+                    sim_state.next(first_action, 0)
                 
-                # ゲーム終了までランダムプレイアウト
+                # プレイアウト
                 winner = self._playout(sim_state)
                 
                 if winner == self.my_player_num:
                     action_scores[first_action] += 1
-                elif winner != -1: # 自分以外の勝ち
-                    action_scores[first_action] -= 1 # 負けはペナルティ
-
-        # スコアが最も高いアクションを選択
+                elif winner != -1: # 他のプレイヤーの勝ち
+                    action_scores[first_action] -= 1
+                    
+        # スコア最大の行動を選択
+        # None(パス)がキーに含まれる可能性があるので注意
         best_action = max(action_scores, key=action_scores.get)
-        # デバッグ出力（必要に応じてコメントアウト）
-        # clean_scores = {str(k): v for k, v in action_scores.items()}
-        # print(f"AI Thought: Scores {clean_scores} -> Select {best_action}")
-        return best_action, 0
+        
+        print(f"AI Thought: Safe={len(safe_moves)}, Candidates={[str(c) if c else 'PASS' for c in candidates]}")
+        # print(f"Scores: { {str(k) if k else 'PASS': v for k, v in action_scores.items()} }")
+
+        if best_action is None:
+            return None, 1
+        else:
+            return best_action, 0
+
+    def _is_safe_move(self, card, hand_card_strs):
+        """出したカードの『次』を自分が持っていればSafe（ロック継続）"""
+        val = card.number.val
+        suit = card.suit
+        
+        # A(1) や K(13) は端なので、出すとそこで列が終わる＝安全（誰もそれ以上出せない）
+        if val == 1 or val == 13:
+            return True
+            
+        # 7より小さい場合 (A...6), 次に出せるのは val - 1
+        next_target_val = -1
+        if val < 7:
+            next_target_val = val - 1
+        # 7より大きい場合 (8...K), 次に出せるのは val + 1
+        elif val > 7:
+            next_target_val = val + 1
+            
+        # 次のカードを持っているかチェック
+        # Cardオブジェクトの生成コストを避けるため文字列比較などを利用（最適化）
+        # ここでは簡易に全探索
+        
+        # 次のカードを表す文字列表現作成
+        # Number Enumから探すのは少し手間なので、単純に検索
+        # hand_card_strs は呼び出し元で作成済み
+        
+        # next_target_val に対応する Number を探す（効率悪いが枚数少ないので許容）
+        # Enum定義: ACE=(1, 'A')...
+        target_number = None
+        for n in Number:
+            if n.val == next_target_val:
+                target_number = n
+                break
+        
+        if target_number:
+            target_card_str = str(suit) + str(target_number)
+            return target_card_str in hand_card_strs
+            
+        return False
 
     def _get_unknown_cards(self, state):
         unknown_pool = []
@@ -454,12 +461,9 @@ class HybridAI:
         return unknown_pool
 
     def _create_determinized_state(self, original_state, unknown_cards):
-        """現在の状態をコピーし、敵の手札をランダムにシャッフルして配り直す"""
         shuffled_unknown = list(unknown_cards)
         random.shuffle(shuffled_unknown)
-        
         new_state = original_state.clone()
-        
         card_idx = 0
         for p_idx in range(new_state.players_num):
             if p_idx != self.my_player_num:
@@ -467,7 +471,6 @@ class HybridAI:
                 cards_for_p = shuffled_unknown[card_idx : card_idx + count]
                 new_state.players_cards[p_idx] = Hand(cards_for_p)
                 card_idx += count
-                
         return new_state
 
     def _playout(self, state):
@@ -476,32 +479,25 @@ class HybridAI:
                 break
             p_idx = state.turn_player
             actions = state.my_actions()
+            
             if not actions:
                 state.next(None, 1)
             else:
-                # Playout中の相手も賢く振る舞わせる？
-                # 今回はランダム（計算量優先）
+                # プレイアウト中の他プレイヤーも、賢い動き（パスしない）をすると仮定
+                # ここをランダムのままにするか、ルールベースを入れるかで強さが変わる
+                # PIMCの標準では「相手も最適に行動する」が理想だが、重くなるのでランダムで妥協
                 action = random.choice(actions)
                 state.next(action, 0)
         
-        winner = -1
-        remaining = [i for i in range(state.players_num) if i not in state.out_player]
-        
-        # 手札0で勝ち
+        # 勝者判定
         for i, hand in enumerate(state.players_cards):
             if len(hand) == 0 and i not in state.out_player:
-                winner = i
-                break
-        
-        # バースト勝ち
-        if winner == -1 and len(remaining) == 1:
-            winner = remaining[0]
-            
-        return winner
+                return i
+        return -1
 
 
 # インスタンス作成
-ai_instance = HybridAI(MY_PLAYER_NUM, simulation_count=SIMULATION_COUNT)
+ai_instance = HybridStrongestAI(MY_PLAYER_NUM, simulation_count=SIMULATION_COUNT)
 
 
 def random_action(state):
