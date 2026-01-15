@@ -509,8 +509,14 @@ class HybridStrongestAI:
         self.simulation_count = simulation_count
 
         self._opponent_model = None
+        # シミュレーション内で再帰的にPIMCを呼ばないためのガード
+        self._in_simulation = False
 
     def get_action(self, state):
+        # シミュレーション中は軽量なロールアウトポリシーで打つ（AI同士前提でも無限再帰を防ぐ）
+        if self._in_simulation:
+            return self._rollout_policy_action(state)
+
         # opponent model 初期化
         if self._opponent_model is None or self._opponent_model.players_num != state.players_num:
             self._opponent_model = OpponentModel(state.players_num)
@@ -533,11 +539,7 @@ class HybridStrongestAI:
                 return None, 1
             return candidates[0], 0
 
-        # --- Phase 1: Inference Engine ---
         tracker = self._build_tracker_from_history(state)
-
-        # --- Phase 2: Determinization (制約付き) ---
-        # --- Phase 3: Evaluation (より賢い相手プレイアウト) ---
 
         action_scores = {action: 0 for action in candidates}
 
@@ -564,6 +566,24 @@ class HybridStrongestAI:
         if best_action is None:
             return None, 1
         return best_action, 0
+
+    def _rollout_policy_action(self, state):
+        """プレイアウト用の軽量ポリシー（再帰禁止）。"""
+        my_actions = state.my_actions()
+        if not my_actions:
+            return None, 1
+
+        # ロールアウトでは基本PASSしない（探索の分散を避ける）
+        ends = [a for a in my_actions if a.number in (Number.ACE, Number.KING)]
+        if ends:
+            return random.choice(ends), 0
+
+        hand_strs = [str(c) for c in state.players_cards[state.turn_player]]
+        safe = [a for a in my_actions if self._is_safe_move(a, hand_strs)]
+        if safe:
+            return random.choice(safe), 0
+
+        return random.choice(my_actions), 0
 
     def _build_tracker_from_history(self, state):
         """履歴を先頭から逐次再生し、その時点の盤面(legal_actions)でパス推論を行う。"""
@@ -742,13 +762,11 @@ class HybridStrongestAI:
         return new_state
 
     def _playout(self, state):
-        """Phase3: AI同士対戦を想定したプレイアウト。
-
-        速度より勝率を優先し、プレイアウト中も各プレイヤーが同様に
-        PIMC(+推論/確定化)で意思決定するものとして評価する。
-        """
-        # プレイアウト用に各プレイヤーのAIを用意（同等ロジック）
-        ais = [HybridStrongestAI(p, simulation_count=max(20, self.simulation_count // 4)) for p in range(state.players_num)]
+        """Phase3: ロールアウトポリシーでのプレイアウト（AI同士を簡易に模擬）。"""
+        # プレイアウト用に各プレイヤーのAIを用意（同等ロジックのロールアウトを使う）
+        ais = [HybridStrongestAI(p, simulation_count=0) for p in range(state.players_num)]
+        for a in ais:
+            a._in_simulation = True
 
         for _ in range(SIMULATION_DEPTH):
             if state.is_done():
