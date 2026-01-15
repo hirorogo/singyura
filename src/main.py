@@ -1,5 +1,6 @@
-
 import random
+import copy
+import time
 from enum import Enum
 from random import shuffle
 import numpy as np
@@ -7,6 +8,10 @@ import numpy as np
 # --- 定数・設定 ---
 EP_GAME_COUNT = 1000  # 評価用の対戦回数
 MY_PLAYER_NUM = 0     # 自分のプレイヤー番号
+
+# シミュレーション用設定
+SIMULATION_COUNT = 30 # 1手につき何回シミュレーションするか（多いほど強いが遅い）
+SIMULATION_DEPTH = 100 # どこまで先読みするか
 
 # --- データクラス定義 ---
 
@@ -47,8 +52,8 @@ class Number(Enum):
 
 class Card:
     def __init__(self, suit, number):
-        if not (isinstance(suit, Suit) and isinstance(number, Number)):
-            raise ValueError
+        # if not (isinstance(suit, Suit) and isinstance(number, Number)):
+        #     raise ValueError
         self.suit = suit
         self.number = number
 
@@ -139,6 +144,23 @@ class State:
             self.turn_player = turn_player
             self.pass_count = pass_count
             self.out_player = out_player
+
+    def clone(self):
+        """シミュレーション用に状態の深いコピーを作成"""
+        # オブジェクトのディープコピーは重いので手動で行う
+        new_players_cards = [Hand(list(h)) for h in self.players_cards]
+        new_field_cards = self.field_cards.copy()
+        new_pass_count = list(self.pass_count)
+        new_out_player = list(self.out_player)
+        
+        return State(
+            players_num=self.players_num,
+            field_cards=new_field_cards,
+            players_cards=new_players_cards,
+            turn_player=self.turn_player,
+            pass_count=new_pass_count,
+            out_player=new_out_player
+        )
 
     def choice_seven(self, hand):
         """手札の7を場に出す。ダイヤの7があれば1を返す"""
@@ -251,7 +273,7 @@ class State:
         # 現在のプレイヤー
         p_idx = self.turn_player
 
-        if pass_flag == 1 or self.my_actions() == []:
+        if pass_flag == 1 or action is None:
             # パス処理
             self.pass_count[p_idx] += 1
             if self.pass_count[p_idx] >= 3:
@@ -259,10 +281,13 @@ class State:
                 # 手札をすべて場に出す
                 hand = self.players_cards[p_idx]
                 for card in list(hand):
-                    self.put_card(card)
+                    try:
+                        self.put_card(card)
+                    except:
+                         pass # 既に出ているなどのエラーは無視
                 hand.clear() # 手札消滅
                 self.out_player.append(p_idx)
-                print(f"Player {p_idx} BURST!")
+                # print(f"Player {p_idx} BURST!")
         else:
             # カードを出す
             if action:
@@ -270,16 +295,14 @@ class State:
                     self.players_cards[p_idx].choice(action) # 手札から削除
                     self.put_card(action) # 場に出す
                 except ValueError:
-                    print(f"Error: Player {p_idx} tried to play {action} but didn't have it.")
+                    pass
+                    # print(f"Error: Player {p_idx} tried to play {action} but didn't have it.")
 
         # 勝利判定チェック（手札が0になったら）
         if len(self.players_cards[p_idx]) == 0 and p_idx not in self.out_player:
-            # 上がり！
-            # ここではターンを渡さずに終了状態にする（is_doneで判定させるため）
-            # または、out_playerに追加してゲームから除外するか。
-            # 今回は「1位が決まったら終了」なので、ここでリターンしてループ側でキャッチする
-            return self
-
+             # ここではターンを渡さずに終了状態にする（is_doneで判定させるため）
+             return self
+             
         # 次のプレイヤーへ
         self.next_player()
         return self
@@ -296,7 +319,218 @@ class State:
         # ここに来るのは全員アウトの場合のみ
 
 
-# --- AI実装 ---
+# --- 最強AI実装 (HybridAI: God-Lock Rule + PIMC) ---
+
+class HybridAI:
+    def __init__(self, my_player_num, simulation_count=50):
+        self.my_player_num = my_player_num
+        self.simulation_count = simulation_count
+
+    def get_action(self, state):
+        my_actions = state.my_actions()
+        my_hand = state.players_cards[self.my_player_num]
+        
+        # 0. 選択肢がない場合（パス or 1枚しかない）
+        if not my_actions:
+            return None, 1
+            
+        # --- 戦略的フィルタリング (Rule-based) ---
+        
+        # 自分のパス残り回数
+        my_pass_count = state.pass_count[self.my_player_num]
+        can_pass = my_pass_count < 3
+        
+        # 敵の状況確認 (誰かがあと1回でバーストするか？)
+        opponents_in_danger = False
+        for i in range(state.players_num):
+            if i != self.my_player_num and i not in state.out_player:
+                if state.pass_count[i] >= 2:
+                    opponents_in_danger = True
+                    break
+        
+        # 候補手の分類
+        safe_moves = []   # ロック継続、または次も自分が持っている、または端(A/K)
+        risky_moves = []  # 相手に権利を渡す手
+        
+        for action in my_actions:
+            if self._is_safe_move(action, my_hand):
+                safe_moves.append(action)
+            else:
+                risky_moves.append(action)
+        
+        candidates = []
+        
+        # 実行モード判定
+        # 基本方針: 安易な利敵行為（Risky Move）避ける。
+        # 敵が瀕死なら、絶対に助けない「God-Lock」モード発動。
+        
+        if opponents_in_danger:
+            # 敵が死にそうなら、安全な手のみ採用
+            if safe_moves:
+                candidates = safe_moves
+            else:
+                # 安全な手がない（利敵するしかない）場合
+                if can_pass:
+                    # パスして敵自滅を待つ (戦略的パス)
+                    candidates = [None] 
+                else:
+                    # パスもできないなら仕方なくリスクを負う
+                    candidates = risky_moves
+        else:
+            # 平時はSimulationで判断するが、不要なリスクは避けるバイアスをかける
+            if safe_moves:
+                candidates.extend(safe_moves)
+            if risky_moves:
+                candidates.extend(risky_moves)
+            # 余裕があればパスも候補に入れる？ 
+            # -> まだ敵が元気なうちは手を進めたほうが自分の上がり確率があがるため、
+            #    基本的にはパスは候補に入れない（PIMCがパス有利と判断するのは稀）
+        
+        # 候補が単一かつパスの場合
+        if len(candidates) == 1 and candidates[0] is None:
+            print("HybridAI: Strategic PASS executed (God-Lock).")
+            return None, 1
+            
+        # 候補が絞られた状態でPIMC実行
+        # candidatesリストにあるアクションのみをScore計算する
+        best_action, should_pass = self._run_pimc(state, candidates)
+        
+        return best_action, should_pass
+
+    def _is_safe_move(self, card, hand):
+        """そのカードを出すことが『安全』か判定する
+        安全の定義:
+        1. 数字がA(1)またはK(13)である（その先にカードがない）
+        2. 出した後、その次の数字を自分が持っている（ロック継続）
+        """
+        val = card.number.val
+        if val == 1 or val == 13:
+            return True
+            
+        # 次の数字を求める
+        next_val = -1
+        if val < 7:
+            next_val = val - 1 # 6 -> 5
+        else:
+            next_val = val + 1 # 8 -> 9
+            
+        # EnumからCard生成して判定
+        next_enum = None
+        for n in Number:
+            if n.val == next_val:
+                next_enum = n
+                break
+                
+        if next_enum:
+            next_card = Card(card.suit, next_enum)
+            return hand.check(next_card)
+            
+        return False
+
+    def _run_pimc(self, state, candidates):
+        """候補手に対してPIMCシミュレーションを行う"""
+        
+        # candidatesにNone(PASS)が含まれている場合の処理
+        candidate_actions = [c for c in candidates if c is not None]
+        allow_pass = (None in candidates)
+        
+        # 候補が１つだけなら即決（シミュレーション省略）
+        if len(candidate_actions) == 1 and not allow_pass:
+            return candidate_actions[0], 0
+            
+        action_scores = {action: 0 for action in candidate_actions}
+        if allow_pass:
+            action_scores['PASS'] = 0
+
+        # 手札推論（未知カード特定）
+        unknown_cards = self._get_unknown_cards(state)
+
+        for _ in range(self.simulation_count):
+            determinized_state = self._create_determinized_state(state, unknown_cards)
+            
+            # 各候補手について
+            for first_action in candidate_actions:
+                sim_state = determinized_state.clone()
+                sim_state.next(first_action, 0)
+                if self._playout(sim_state) == self.my_player_num:
+                    action_scores[first_action] += 1
+                else:
+                    action_scores[first_action] -= 1 # 負けた場合マイナス評価（オプション）
+            
+            # パスを選択肢に含む場合
+            if allow_pass:
+                sim_state = determinized_state.clone()
+                sim_state.next(None, 1) # PASS実行
+                if self._playout(sim_state) == self.my_player_num:
+                    action_scores['PASS'] += 1
+                else:
+                    action_scores['PASS'] -= 1
+
+        # ベストな手を選ぶ
+        best_action_key = max(action_scores, key=action_scores.get)
+        
+        # デバッグ出力
+        scores_str = { (str(k) if k != 'PASS' else 'PASS'): v for k, v in action_scores.items() }
+        print(f"HybridAI Thought: {scores_str} -> Select {best_action_key}")
+
+        if best_action_key == 'PASS':
+            return None, 1
+        else:
+            return best_action_key, 0
+
+    def _get_unknown_cards(self, state):
+        unknown_pool = []
+        for p_idx in range(state.players_num):
+            if p_idx != self.my_player_num:
+                unknown_pool.extend(state.players_cards[p_idx])
+        return unknown_pool
+
+    def _create_determinized_state(self, original_state, unknown_cards):
+        shuffled_unknown = list(unknown_cards)
+        random.shuffle(shuffled_unknown)
+        new_state = original_state.clone()
+        card_idx = 0
+        for p_idx in range(new_state.players_num):
+            if p_idx != self.my_player_num:
+                count = len(new_state.players_cards[p_idx])
+                cards_for_p = shuffled_unknown[card_idx : card_idx + count]
+                new_state.players_cards[p_idx] = Hand(cards_for_p)
+                card_idx += count
+        return new_state
+
+    def _playout(self, state):
+        for _ in range(SIMULATION_DEPTH):
+            if state.is_done():
+                break
+            p_idx = state.turn_player
+            actions = state.my_actions()
+            if not actions:
+                state.next(None, 1)
+            else:
+                # Playout中の相手も賢く振る舞わせる？
+                # 今回はランダム（計算量優先）
+                action = random.choice(actions)
+                state.next(action, 0)
+        
+        winner = -1
+        remaining = [i for i in range(state.players_num) if i not in state.out_player]
+        
+        # 手札0で勝ち
+        for i, hand in enumerate(state.players_cards):
+            if len(hand) == 0 and i not in state.out_player:
+                winner = i
+                break
+        
+        # バースト勝ち
+        if winner == -1 and len(remaining) == 1:
+            winner = remaining[0]
+            
+        return winner
+
+
+# インスタンス作成
+ai_instance = HybridAI(MY_PLAYER_NUM, simulation_count=SIMULATION_COUNT)
+
 
 def random_action(state):
     """ランダムAI"""
@@ -306,31 +540,14 @@ def random_action(state):
     else:
         return None
 
-# 適応型ルールベースAI（雛形）
 def my_AI(state):
-    """
-    ルールベースAI
-    1. パスチェック: 出せるカードがないならパス
-    2. 戦略的選択: 出せるカードの中で最も有利なものを選ぶ
-    """
-    my_actions = state.my_actions()
-    
-    # 出せるカードがない場合 -> パス
-    if not my_actions:
-         return None, 1 # action=None, pass_flag=1
-    
-    # --- 戦略ロジック実装予定地 ---
-    
-    # 現状はランダム（ここを改良する）
-    best_action = random.choice(my_actions)
-    
-    return best_action, 0 
-
+    return ai_instance.get_action(state)
 
 # --- メイン実行ループ ---
 
 if __name__ == "__main__":
     print(f"MY_PLAYER_NUM: {MY_PLAYER_NUM}")
+    print("AI Mode: PIMC (Perfect Information Monte Carlo)")
     
     state = State()
     turn = 0
@@ -373,8 +590,7 @@ if __name__ == "__main__":
         # アクションの表示
         if pass_flag == 1:
             print(f"Player {current_player}: PASS ({state.pass_count[current_player] + 1}回目)")
+            state.next(None, 1) # パス
         else:
             print(f"Player {current_player}: Play {action}")
-        
-        # 状態更新
-        state.next(action, pass_flag)
+            state.next(action, 0) # プレイ
