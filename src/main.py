@@ -870,13 +870,17 @@ class HybridStrongestAI:
         if val == 1 or val == 13:
             return True
             
-        # 7より小さい場合 (A...6), 次に出せるのは val - 1
-        next_target_val = -1
+        # 次に出せるカードの値を計算
         if val < 7:
+            # 7より小さい場合 (A...6), 次に出せるのは val - 1
             next_target_val = val - 1
-        # 7より大きい場合 (8...K), 次に出せるのは val + 1
         else:
+            # 7より大きい場合 (8...K), 次に出せるのは val + 1
             next_target_val = val + 1
+        
+        # 範囲チェック
+        if next_target_val < 1 or next_target_val > 13:
+            return True  # 範囲外の場合も安全（端）
             
         # 次のカードを持っているかチェック
         target_number = None

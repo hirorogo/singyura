@@ -1,17 +1,16 @@
 import time
 from main import State, HybridStrongestAI, MY_PLAYER_NUM, random_action
 
-def run_quick_test(game_count=10):
+def run_test(game_count=20):
     wins = [0] * 3
-    ai_pos = 0  # AI is Player 0
+    ai_pos = 0
     
-    # Initialize AI with target simulation count
-    my_ai = HybridStrongestAI(my_player_num=ai_pos, simulation_count=300)
-
+    # Use the configured SIMULATION_COUNT from main.py (1000)
+    my_ai = HybridStrongestAI(my_player_num=ai_pos, simulation_count=1000)
     start_time = time.time()
     
     for i in range(game_count):
-        print(f"Game {i + 1}/{game_count} started...")
+        print(f"Game {i + 1}/{game_count}...")
         state = State()
         turn_count = 0
         
@@ -21,8 +20,6 @@ def run_quick_test(game_count=10):
             
             if current_player == ai_pos:
                 action, pass_flag = my_ai.get_action(state)
-                if turn_count % 25 == 0:
-                    print(f"  Turn {turn_count}: AI still playing...")
             else:
                 action = random_action(state)
                 pass_flag = 0
@@ -31,12 +28,10 @@ def run_quick_test(game_count=10):
             
             state.next(action, pass_flag)
             
-            # Safety: prevent infinite loops
             if turn_count > 200:
-                print(f"  Game {i+1} timeout (200 turns)")
+                print(f"  Timeout at turn {turn_count}")
                 break
 
-        # Determine winner
         winner = -1
         for p, hand in enumerate(state.players_cards):
             if len(hand) == 0 and p not in state.out_player:
@@ -51,24 +46,21 @@ def run_quick_test(game_count=10):
         if winner != -1:
             wins[winner] += 1
             
-        print(f"  Game {i + 1} finished. Winner: Player {winner}. Turns: {turn_count}")
+        print(f"  Winner: Player {winner}, Turns: {turn_count}")
 
     end_time = time.time()
     duration = end_time - start_time
     
-    print("="*50)
-    print(f"Quick Test Result ({game_count} games)")
+    print("="*60)
+    print(f"FINAL TEST RESULT ({game_count} games, 1000 simulations/move)")
     print(f"Time: {duration:.2f} seconds ({duration/game_count:.2f} s/game)")
-    print(f"AI Win Rate: {wins[ai_pos]}/{game_count} ({wins[ai_pos]/game_count*100:.1f}%)")
-    
-    win_percentages = [f"P{i}: {w}/{game_count} ({w/game_count*100:.1f}%)" for i, w in enumerate(wins)]
-    print(f"Details: {', '.join(win_percentages)}")
-    
+    print(f"AI (Player 0) Win Rate: {wins[ai_pos]}/{game_count} ({wins[ai_pos]/game_count*100:.1f}%)")
+    print(f"Details: P0={wins[0]} wins, P1={wins[1]} wins, P2={wins[2]} wins")
     total_wins = sum(wins)
     draws = game_count - total_wins
     if draws > 0:
-        print(f"Draws: {draws}/{game_count} ({draws/game_count*100:.1f}%)")
-    print("="*50)
+        print(f"Draws: {draws}")
+    print("="*60)
 
 if __name__ == "__main__":
-    run_quick_test(10)
+    run_test(20)
