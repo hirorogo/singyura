@@ -42,6 +42,7 @@ SHOW_SIMULATION_PROGRESS = False
 
 # === パフォーマンス設定 ===
 # 推論エンジンの制約付き確定化リトライ回数
+# デフォルト: 30 (元の実装から)
 DETERMINIZATION_RETRY_COUNT = 30
 
 # プレイアウトの最大深度（無限ループ防止）
@@ -89,5 +90,8 @@ def apply_preset(preset_name):
     else:
         raise ValueError(f"Unknown preset: {preset_name}")
 
-# プリセットの適用例（コメントアウトを外して使用）
+# プリセットの適用例
+# 使用方法: 以下のコメントを外して、main.pyをインポートする前に実行してください
+# 例: python -c "from config import apply_preset; apply_preset('balanced'); from main import *"
+# または、このファイルの最後で直接呼び出してください
 # apply_preset('balanced')

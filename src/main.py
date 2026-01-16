@@ -617,7 +617,7 @@ class HybridStrongestAI:
         for batch_start in range(0, self.simulation_count, batch_size):
             batch_end = min(batch_start + batch_size, self.simulation_count)
             
-            for _ in range(batch_start, batch_end):
+            for _ in range(batch_end - batch_start):
                 determinized_state = self._create_determinized_state_with_constraints(state, tracker)
 
                 for first_action in candidates:
