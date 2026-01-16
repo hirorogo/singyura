@@ -14,9 +14,6 @@ MY_PLAYER_NUM = 0     # 自分のプレイヤー番号
 SIMULATION_COUNT = 200  # 1手につき何回シミュレーションするか
 SIMULATION_DEPTH = 200  # どこまで先読みするか
 
-
-
-
 # --- データクラス定義 ---
 
 class Suit(Enum):
@@ -109,17 +106,11 @@ class Deck(list):
         return self.pop()
 
     def deal(self, players_num):
-        cards_per_player = len(self) // players_num
-        result = []
-        for i in range(players_num):
-            start = i * cards_per_player
-            if i == players_num - 1:
-                # Last player gets any remainder cards
-                result.append(Hand(self[start:]))
-            else:
-                result.append(Hand(self[start:start + cards_per_player]))
+        cards = [Hand(i) for i in np.array_split(self, players_num)]
+        # numpy array からリストに戻す
+        cards = [Hand(list(c)) for c in cards]
         self.clear()
-        return result
+        return cards
 
 
 # --- 推論器 (Inference Engine) ---
@@ -667,7 +658,7 @@ class HybridStrongestAI:
         need = {p: len(original_state.players_cards[p]) for p in range(base.players_num) if p != self.my_player_num}
 
         # リトライ
-        for _ in range(DETERMINIZATION_RETRY_COUNT):
+        for _ in range(30):
             random.shuffle(pool)
 
             # 作業用
