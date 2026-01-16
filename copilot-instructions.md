@@ -1,0 +1,299 @@
+# Copilot Instructions for Singyura (七並べAI)
+
+## プロジェクト概要
+
+このプロジェクトは、トンネルルールを採用した七並べ（セブンズ）ゲームのAI対戦システムです。PIMC (Perfect Information Monte Carlo) 法を用いた高度なAIを実装しています。
+
+### ゲームルール
+- 3人対戦（足りない枠はランダムAIが埋める）
+- 4スーツ（♠♣♡♢）のA～Kの52枚を使用
+- 勝利条件：「カードを最も早く使い切る」または「他プレイヤーが全員失格」
+- パスは1人あたり3回まで
+- 4回目のパスで失格（バースト）、手札をすべて盤面に出す
+
+### トンネルルール（重要）
+- カードがAまで出た場合、そのスートはKからしか出せない
+- Kが出た場合、同様にAからしか出せない
+- 戦略的な封鎖・妨害要素が追加される
+
+---
+
+## ディレクトリ構成
+
+```
+/
+├── src/                     # ソースコード
+│   ├── main.py             # ゲームエンジン及びAI実装（メイン）
+│   └── benchmark.py        # ベンチマーク・評価用スクリプト
+├── doc/                     # ドキュメント
+│   ├── specification.md    # 仕様書・課題説明
+│   ├── design_strongest.md # PIMC法の最強AI設計書
+│   ├── strategy.md         # 戦略案・相手モデル
+│   ├── ai_status_report.md # 現状分析と強化戦略
+│   ├── logs/               # 開発ログ・ナレッジ
+│   │   ├── 00_structure_changes.md
+│   │   └── 01_pimc_implementation_and_tuning.md
+│   └── misc/               # その他資料
+│       └── colab_notebook.md
+└── .vscode/                # エディタ設定
+```
+
+---
+
+## コーディング規約
+
+### Python スタイル
+- **PEP 8** に準拠してコードを書くこと
+- 適切なインデント（4スペース）を使用
+- クラス名はPascalCase、関数名はsnake_case
+- 日本語コメントは適切に使用してよい（仕様書が日本語のため）
+
+### 命名規則
+- **Enum**: `Suit`, `Number`（大文字始まり）
+- **Class**: `Card`, `Hand`, `Deck`, `State`, `CardTracker`（PascalCase）
+- **Function**: `random_action`, `my_AI`, `legal_actions`（snake_case）
+- **Constants**: `EP_GAME_COUNT`, `MY_PLAYER_NUM`, `SIMULATION_COUNT`（全て大文字）
+
+---
+
+## コアクラス・データ構造
+
+### Card, Hand, Deck
+```python
+class Card:
+    # カードを表現（スート+数字）
+    # __eq__, __hash__ 実装済み（集合操作可能）
+    
+class Hand(list):
+    # 手札を表現するリスト
+    # check_number(), check_suit(), choice(), check() などのメソッド
+    
+class Deck(list):
+    # 初期デッキ（52枚）
+    # shuffle(), draw(), deal() などのメソッド
+```
+
+### State
+ゲーム状態を管理する中核クラス。
+
+```python
+class State:
+    players_num: int              # プレイヤー数（通常3）
+    players_cards: list[Hand]     # 各プレイヤーの手札
+    field_cards: np.ndarray       # 場のカード状態 (4x13)
+    turn_player: int              # 現在のターンプレイヤー
+    pass_count: list[int]         # 各プレイヤーのパス回数
+    out_player: list[int]         # バーストしたプレイヤー
+    history: list[tuple]          # (player, action, pass_flag) の履歴
+```
+
+#### 重要メソッド
+- `legal_actions()`: 場で出せるカードのリスト（トンネルルール対応）
+- `my_actions()`: 現在のプレイヤーが出せるカード
+- `is_done()`: ゲーム終了判定
+- `next(action, pass_flag)`: 状態更新
+- `clone()`: シミュレーション用の深いコピー
+
+---
+
+## AI実装アーキテクチャ
+
+### HybridStrongestAI（PIMC法）
+現在の最強AIの実装。3つのフェーズで構成されています。
+
+#### Phase 1: 推論エンジン (CardTracker)
+相手の手札を推論する「名探偵」システム。
+
+```python
+class CardTracker:
+    possible[p]: set[Card]  # プレイヤーpが持ちうるカードの集合
+    
+    observe_action(player, action, is_pass):
+        # パス観測: legal_actions()のカードを持たないと判断
+        # プレイ観測: そのカードを全員が持たない
+```
+
+**推論ロジック:**
+1. 初期状態: 自分以外のカードは誰が持っているか不明
+2. 確定情報: 場に出たカード、自分のカードは確定
+3. パス検知: プレイヤーAがパス → Aはその時出せる候補カードを持っていない
+4. 履歴リプレイ: 過去の全行動を再生して推論精度を向上
+
+#### Phase 2: 確定化 (Determinization)
+推論結果を元に「全員の手札が透けて見える仮想世界」を生成。
+
+```python
+_create_determinized_state_with_constraints(state, tracker):
+    # CardTracker.possible[p]の制約を満たすように相手手札を割当
+    # 30回リトライ、失敗時は制約なし確定化にフォールバック
+```
+
+#### Phase 3: 評価 (Playout)
+各仮想世界において、ゲーム終了まで高速にプレイ。
+
+```python
+_rollout_policy_action(state):
+    # 1. 端(A/K)優先
+    # 2. Safe(次の札を自分が持つ)優先
+    # 3. ランダム選択
+    # PASSは基本しない（探索分散を避ける）
+```
+
+---
+
+## 現在の性能と課題
+
+### ベンチマーク結果（100試合）
+- **最高勝率**: 44% (SIMULATION_COUNT=200, vs ランダムAI)
+- **平均処理時間**: 0.02秒/ゲーム
+
+### 主な課題
+1. **評価環境とプレイアウトモデルの不一致**
+   - ベンチマーク相手：ランダムAI
+   - プレイアウトモデル：AI同士想定
+   - → モデル不一致による勝率低下
+
+2. **PASS候補の扱い**
+   - PASSを候補に入れると探索が分散して弱くなる
+   - トンネルルール下では「出せるカードがあるのにPASS」は損失が大きい
+
+3. **設計書との差分（未実装機能）**
+   - 確率分布 (Belief State) の完全実装
+   - 戦略モード切替（Tunnel Lock / Burst Force）の強化
+
+---
+
+## 開発時の注意事項
+
+### トンネルルールの実装
+- `State.legal_actions()` でトンネルルールが実装されている
+- Aが出ている場合: 8→9→...→K のみ伸ばせる
+- Kが出ている場合: A→2→...→6 のみ伸ばせる
+- 7は初期配置時に自動的に場に出される
+
+### 状態のクローン
+- `State.clone()` はシミュレーション用に最適化されている
+- deepcopy は重いため手動でコピーしている
+- プレイアウト中は軽量なクローンを使用
+
+### 無限再帰の防止
+- `_in_simulation` フラグでプレイアウト中かを判定
+- プレイアウト中は軽量なロールアウトポリシーを使用
+- PIMC → playout → PIMC ... の無限再帰を防ぐ
+
+### パフォーマンス最適化
+- numpy の効果的な使用（field_cards）
+- オブジェクト生成コストの削減
+- State.clone() の最適化が重要
+
+---
+
+## 改善の方向性
+
+### 短期改善（1-2週間、勝率55-60%目標）
+1. PASS候補の完全除外
+2. プレイアウトモデルの調整（ベンチ相手に合わせる）
+3. 確定化の重み付け改善
+
+### 中期改善（2-4週間、勝率65-75%目標）
+4. Belief State の確率化
+5. 戦略モードの本格実装（Tunnel Lock / Burst Force）
+6. トンネルロック戦略の強化
+7. バースト誘導戦略
+
+### 長期改善（1-3ヶ月、勝率80-90%目標）
+8. 軽量化・高速化（State.clone()等）
+9. 深層学習との融合
+10. マルチエージェント強化学習
+
+---
+
+## よく使う関数・メソッド
+
+### 手札に関する関数
+```python
+state.my_hands()                        # 手札をリストで取得
+state.my_hands().check_number()         # 手札の数字をリストで取得
+state.my_hands().check_suit()           # 手札のマークをリストで取得
+state.my_actions()                      # 自分が出せるカードのリスト
+```
+
+### 場の札に関する関数
+```python
+state.field_cards                       # 場のカード状態（4x13のnumpy配列）
+state.legal_actions()                   # 場で出せるカード（トンネルルール考慮）
+```
+
+### ゲーム制御
+```python
+state.is_done()                         # ゲーム終了判定
+state.next(action, pass_flag=0)         # 状態を更新して次へ
+state.clone()                           # 状態の深いコピー
+```
+
+---
+
+## 実行方法
+
+### メインゲーム実行
+```bash
+cd src
+python main.py
+```
+
+### ベンチマーク実行
+```bash
+cd src
+python benchmark.py
+```
+
+---
+
+## デバッグのヒント
+
+### 盤面の可視化
+- `state.field_cards` を見ると場の状態が分かる
+- `state.history` で全行動履歴を追跡可能
+
+### 推論のデバッグ
+- `CardTracker.possible[p]` で各プレイヤーが持ちうるカードを確認
+- 履歴リプレイ機能を使って推論の正確性を検証
+
+### パフォーマンス計測
+- `time.time()` で処理時間を計測
+- `SIMULATION_COUNT` を調整して速度と精度のトレードオフを確認
+
+---
+
+## 参考ドキュメント
+
+- `doc/specification.md`: 課題の基本仕様
+- `doc/design_strongest.md`: PIMC法の全体設計
+- `doc/strategy.md`: 戦略案と相手モデル
+- `doc/ai_status_report.md`: 詳細な現状分析と改善戦略
+- `doc/logs/01_pimc_implementation_and_tuning.md`: 実装とチューニングの履歴
+
+---
+
+## GitHub Copilotへの指示
+
+このプロジェクトでコードを生成・編集する際は：
+
+1. **PEP 8** に準拠したPythonコードを書くこと
+2. **トンネルルール** を常に考慮すること
+3. **State.clone()** の最適化を意識すること（deepcopyを避ける）
+4. **無限再帰** を防ぐ設計を心がけること（_in_simulationフラグ等）
+5. **日本語コメント** は適切に使用してよい
+6. **既存の命名規則** を維持すること
+7. **numpy** の効果的な使用を心がけること
+8. **シミュレーション回数** と **精度** のバランスを考慮すること
+
+### 変更を加える際の優先順位
+1. **即効性のある改善**（PASS除外、プレイアウト調整）を優先
+2. **既存の動作を壊さない**こと
+3. **パフォーマンス** を維持・向上させること
+4. **コードの可読性** を保つこと
+
+---
+
+作成日: 2026年1月16日
