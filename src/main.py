@@ -75,9 +75,20 @@ class Number(Enum):
         return f"Number.{self.name}"
 
 class Card:
+    # カードオブジェクトのキャッシュ（メモリ効率化）
+    _cache = {}
+    
+    def __new__(cls, suit, number):
+        key = (suit, number)
+        if key not in cls._cache:
+            instance = super().__new__(cls)
+            cls._cache[key] = instance
+        return cls._cache[key]
+    
     def __init__(self, suit, number):
-        # if not (isinstance(suit, Suit) and isinstance(number, Number)):
-        #     raise ValueError
+        # 既にキャッシュされている場合は再初期化しない
+        if hasattr(self, 'suit'):
+            return
         self.suit = suit
         self.number = number
 
@@ -244,7 +255,7 @@ class State:
     def _init_deal_and_open_sevens(self):
         deck = Deck()
         self.players_cards = deck.deal(self.players_num)
-        self.field_cards = xp.zeros((4, 13), dtype='int64')
+        self.field_cards = xp.zeros((4, 13), dtype='uint8')
         self.pass_count = [0] * self.players_num
         self.out_player = []
         self.history = []  # (player, action, pass_flag)
@@ -324,7 +335,7 @@ class State:
         # ここは replay 用の盤面だけ再現できればよいので、各プレイヤーの手札は追跡しない(推論用legal_actionsが目的)
         # よって State.next を使わず、field/pass/out/turn のみを更新する。
 
-        s.field_cards = xp.zeros((4, 13), dtype='int64')
+        s.field_cards = xp.zeros((4, 13), dtype='uint8')
         s.pass_count = [0] * ended_state.players_num
         s.out_player = []
 
@@ -631,7 +642,7 @@ class HybridStrongestAI:
         # 盤面のみ再現する軽量 state を作る
         replay_state = State(
             players_num=state.players_num,
-            field_cards=xp.zeros((4, 13), dtype='int64'),
+            field_cards=xp.zeros((4, 13), dtype='uint8'),
             players_cards=[Hand([]) for _ in range(state.players_num)],
             turn_player=0,
             pass_count=[0] * state.players_num,
