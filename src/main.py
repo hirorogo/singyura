@@ -42,6 +42,10 @@ except ImportError:
 EP_GAME_COUNT = 1000  # 評価用の対戦回数
 MY_PLAYER_NUM = 0     # 自分のプレイヤー番号
 
+# カードゲーム定数
+SUIT_COUNT = 4        # スートの数（スペード、クラブ、ハート、ダイヤ）
+CARDS_PER_SUIT = 13   # スートごとのカード数（A-K）
+
 # シミュレーション用設定
 # 強さ優先: 探索回数を増やす（遅くなる）
 # GPU使用時は大幅に増やして最強を目指す
@@ -57,6 +61,7 @@ else:
     SIMULATION_COUNT = 200   # CPU: 標準
     SIMULATION_DEPTH = 200
     print(f"✓ CPU mode: SIMULATION_COUNT={SIMULATION_COUNT}, DEPTH={SIMULATION_DEPTH}")
+
 
 
 
@@ -278,7 +283,7 @@ class State:
     def _init_deal_and_open_sevens(self):
         deck = Deck()
         self.players_cards = deck.deal(self.players_num)
-        self.field_cards = xp.zeros((4, 13), dtype='uint8')
+        self.field_cards = xp.zeros((SUIT_COUNT, CARDS_PER_SUIT), dtype='uint8')
         self.pass_count = [0] * self.players_num
         self.out_player = []
         self.history = []  # (player, action, pass_flag)
@@ -358,7 +363,7 @@ class State:
         # ここは replay 用の盤面だけ再現できればよいので、各プレイヤーの手札は追跡しない(推論用legal_actionsが目的)
         # よって State.next を使わず、field/pass/out/turn のみを更新する。
 
-        s.field_cards = xp.zeros((4, 13), dtype='uint8')
+        s.field_cards = xp.zeros((SUIT_COUNT, CARDS_PER_SUIT), dtype='uint8')
         s.pass_count = [0] * ended_state.players_num
         s.out_player = []
 
@@ -666,7 +671,7 @@ class HybridStrongestAI:
         # 盤面のみ再現する軽量 state を作る
         replay_state = State(
             players_num=state.players_num,
-            field_cards=xp.zeros((4, 13), dtype='uint8'),
+            field_cards=xp.zeros((SUIT_COUNT, CARDS_PER_SUIT), dtype='uint8'),
             players_cards=[Hand([]) for _ in range(state.players_num)],
             turn_player=0,
             pass_count=[0] * state.players_num,
