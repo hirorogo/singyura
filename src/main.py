@@ -211,7 +211,7 @@ class CardTracker:
             self.normalize(player)
             return
 
-        if action is not None and not isinstance(action, list):
+        if action is not None:
             # そのカードを出したので、全プレイヤーが持たない
             for p in range(self.players_num):
                 self.possible[p][action] = 0.0
