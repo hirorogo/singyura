@@ -1,13 +1,17 @@
 import time
-from main import State, HybridStrongestAI, MY_PLAYER_NUM, random_action
+from main import State, HybridStrongestAI, MY_PLAYER_NUM, random_action, GPU_AVAILABLE, SIMULATION_COUNT
 
 def run_benchmark(game_count=100):
     wins = [0] * 3
     ai_pos = 0 # AI is Player 0
     
     # Initialize AI
-    # Simulation count 50 for reasonable speed/accuracy trade-off
-    my_ai = HybridStrongestAI(my_player_num=ai_pos, simulation_count=50)
+    # Use default SIMULATION_COUNT which adapts to GPU availability
+    my_ai = HybridStrongestAI(my_player_num=ai_pos, simulation_count=SIMULATION_COUNT)
+    
+    print(f"Running benchmark with {game_count} games")
+    print(f"GPU: {'Enabled' if GPU_AVAILABLE else 'Disabled'}")
+    print(f"Simulation count: {SIMULATION_COUNT}")
 
     start_time = time.time()
     

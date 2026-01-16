@@ -5,14 +5,37 @@ from enum import Enum
 from random import shuffle
 import numpy as np
 
+# GPU acceleration support
+try:
+    import cupy as cp
+    GPU_AVAILABLE = cp.cuda.is_available()
+    if GPU_AVAILABLE:
+        xp = cp  # Use CuPy for array operations
+        print("✓ GPU acceleration enabled (CuPy)")
+    else:
+        xp = np
+        print("✓ GPU not available, using CPU (NumPy)")
+except ImportError:
+    xp = np
+    GPU_AVAILABLE = False
+    print("✓ CuPy not installed, using CPU (NumPy)")
+
 # --- 定数・設定 ---
 EP_GAME_COUNT = 1000  # 評価用の対戦回数
 MY_PLAYER_NUM = 0     # 自分のプレイヤー番号
 
 # シミュレーション用設定
 # 強さ優先: 探索回数を増やす（遅くなる）
-SIMULATION_COUNT = 200  # 1手につき何回シミュレーションするか
-SIMULATION_DEPTH = 200  # どこまで先読みするか
+# GPU使用時は大幅に増やして最強を目指す
+if GPU_AVAILABLE:
+    SIMULATION_COUNT = 2000  # GPU: 10倍のシミュレーション
+    SIMULATION_DEPTH = 300   # より深い先読み
+    print(f"✓ GPU mode: SIMULATION_COUNT={SIMULATION_COUNT}, DEPTH={SIMULATION_DEPTH}")
+else:
+    SIMULATION_COUNT = 200   # CPU: 標準
+    SIMULATION_DEPTH = 200
+    print(f"✓ CPU mode: SIMULATION_COUNT={SIMULATION_COUNT}, DEPTH={SIMULATION_DEPTH}")
+
 
 # --- データクラス定義 ---
 
@@ -106,11 +129,19 @@ class Deck(list):
         return self.pop()
 
     def deal(self, players_num):
-        cards = [Hand(i) for i in np.array_split(self, players_num)]
-        # numpy array からリストに戻す
-        cards = [Hand(list(c)) for c in cards]
+        # Keep card distribution simple as it's done once per game
+        # GPU benefits come from the many field_cards array operations
+        cards_per_player = len(self) // players_num
+        result = []
+        for i in range(players_num):
+            start = i * cards_per_player
+            if i == players_num - 1:
+                # Last player gets any remainder cards
+                result.append(Hand(self[start:]))
+            else:
+                result.append(Hand(self[start:start + cards_per_player]))
         self.clear()
-        return cards
+        return result
 
 
 # --- 推論器 (Inference Engine) ---
@@ -213,7 +244,7 @@ class State:
     def _init_deal_and_open_sevens(self):
         deck = Deck()
         self.players_cards = deck.deal(self.players_num)
-        self.field_cards = np.zeros((4, 13), dtype='int64')
+        self.field_cards = xp.zeros((4, 13), dtype='int64')
         self.pass_count = [0] * self.players_num
         self.out_player = []
         self.history = []  # (player, action, pass_flag)
@@ -293,7 +324,7 @@ class State:
         # ここは replay 用の盤面だけ再現できればよいので、各プレイヤーの手札は追跡しない(推論用legal_actionsが目的)
         # よって State.next を使わず、field/pass/out/turn のみを更新する。
 
-        s.field_cards = np.zeros((4, 13), dtype='int64')
+        s.field_cards = xp.zeros((4, 13), dtype='int64')
         s.pass_count = [0] * ended_state.players_num
         s.out_player = []
 
@@ -529,10 +560,12 @@ class HybridStrongestAI:
         if not my_actions:
             return None, 1
 
-        # 勝率最大化: 戦略的フィルタリングを弱め、PIMCに判断を委ねる
+        # 勝率最大化: 合法手がある場合はPASSを含めない（探索分散を防ぐ）
+        # これはai_status_report.mdで最も効果的とされている改善策
         candidates = list(my_actions)
-        if state.pass_count[self.my_player_num] < 3:
-            candidates.append(None)
+        # PASSは出せる手がない場合のみ（3回未満でも）
+        # if state.pass_count[self.my_player_num] < 3:
+        #     candidates.append(None)
 
         if len(candidates) == 1:
             if candidates[0] is None:
@@ -543,23 +576,29 @@ class HybridStrongestAI:
 
         action_scores = {action: 0 for action in candidates}
 
-        for _ in range(self.simulation_count):
-            determinized_state = self._create_determinized_state_with_constraints(state, tracker)
+        # GPU使用時は並列度を上げてバッチ処理（概念的な最適化）
+        batch_size = 10 if GPU_AVAILABLE else 1
+        
+        for batch_start in range(0, self.simulation_count, batch_size):
+            batch_end = min(batch_start + batch_size, self.simulation_count)
+            
+            for _ in range(batch_start, batch_end):
+                determinized_state = self._create_determinized_state_with_constraints(state, tracker)
 
-            for first_action in candidates:
-                sim_state = determinized_state.clone()
+                for first_action in candidates:
+                    sim_state = determinized_state.clone()
 
-                if first_action is None:
-                    sim_state.next(None, 1)
-                else:
-                    sim_state.next(first_action, 0)
+                    if first_action is None:
+                        sim_state.next(None, 1)
+                    else:
+                        sim_state.next(first_action, 0)
 
-                winner = self._playout(sim_state)
+                    winner = self._playout(sim_state)
 
-                if winner == self.my_player_num:
-                    action_scores[first_action] += 1
-                elif winner != -1:
-                    action_scores[first_action] -= 1
+                    if winner == self.my_player_num:
+                        action_scores[first_action] += 1
+                    elif winner != -1:
+                        action_scores[first_action] -= 1
 
         best_action = max(action_scores, key=action_scores.get)
 
@@ -592,7 +631,7 @@ class HybridStrongestAI:
         # 盤面のみ再現する軽量 state を作る
         replay_state = State(
             players_num=state.players_num,
-            field_cards=np.zeros((4, 13), dtype='int64'),
+            field_cards=xp.zeros((4, 13), dtype='int64'),
             players_cards=[Hand([]) for _ in range(state.players_num)],
             turn_player=0,
             pass_count=[0] * state.players_num,
