@@ -10,12 +10,12 @@ EP_GAME_COUNT = 1000  # 評価用の対戦回数
 MY_PLAYER_NUM = 0     # 自分のプレイヤー番号
 
 # シミュレーション用設定
-# 強さ優先: 探索回数を増やす（遅くなる）
-# コンテスト用: 推論時間制限なしのため増加
-SIMULATION_COUNT = 300  # 1手につき何回シミュレーションするか (精度と速度のバランス)
-SIMULATION_DEPTH = 300  # どこまで先読みするか
+# 強さ優先: 探索回数を大幅に増やす（計算コスト無視）
+# コンテスト用: 推論時間制限なし
+SIMULATION_COUNT = 1000  # 1手につき何回シミュレーションするか (精度最優先)
+SIMULATION_DEPTH = 500  # どこまで先読みするか
 ENDGAME_THRESHOLD = 10  # この枚数以下になったら精密な探索に切り替え
-ENDGAME_SIMULATION_COUNT = 1000  # 終盤の精密探索回数
+ENDGAME_SIMULATION_COUNT = 3000  # 終盤の精密探索回数（さらに増強）
 
 # --- データクラス定義 ---
 
@@ -794,9 +794,9 @@ class HybridStrongestAI:
         return tracker
 
     def _create_determinized_state_with_constraints(self, original_state, tracker: CardTracker):
-        """推論制約(possible)を満たすように相手手札を生成（確率的サンプリング版）。
+        """推論制約(possible)を満たすように相手手札を生成（改良版）。
 
-        確率分布に基づいて重み付きサンプリングを行う。
+        確率的制約を考慮しつつ、シンプルなサンプリングを行う。
         """
         base = original_state.clone()
 
@@ -814,78 +814,37 @@ class HybridStrongestAI:
         # 手札枚数(バーストは0)
         need = {p: len(original_state.players_cards[p]) for p in range(base.players_num) if p != self.my_player_num}
 
-        # 確率的割り当て（リトライ付き）
-        for attempt in range(50):
+        # シンプルな制約ベースの割り当て（元の実装と類似、ただし確率>0のカードのみ）
+        for attempt in range(30):
+            random.shuffle(pool)
+
             # 作業用
             remain = list(pool)
             hands = {p: [] for p in need.keys()}
 
             ok = True
-            # 各プレイヤーに確率に基づいてカードを割り当て
+            # 各プレイヤーに確率>0のカードを割り当て
             for p in need.keys():
                 k = need[p]
                 if k == 0:
                     continue
 
-                # そのプレイヤーが持ちうるカードとその確率
-                candidate_probs = [(c, tracker.possible[p][c]) for c in remain if tracker.possible[p][c] > 0]
-                
-                if not candidate_probs:
-                    # 確率が0のカードしかない場合、フォールバック
-                    ok = False
-                    break
-                
-                if len(candidate_probs) < k:
-                    # 候補カードが足りない場合、フォールバック
+                # 確率が0より大きいカード
+                possible_list = [c for c in remain if tracker.possible[p][c] > 0]
+                if len(possible_list) < k:
                     ok = False
                     break
 
-                # 確率に基づく重み付きサンプリング
-                cards, probs = zip(*candidate_probs)
-                total_prob = sum(probs)
-                if total_prob == 0:
-                    ok = False
-                    break
-                
-                normalized_probs = [p / total_prob for p in probs]
-                
-                # 重複なしでk枚選択
-                try:
-                    chosen = []
-                    temp_cards = list(cards)
-                    temp_probs = list(normalized_probs)
-                    
-                    for _ in range(k):
-                        if not temp_cards:
-                            break
-                        # 確率に基づいて1枚選択
-                        selected_card = random.choices(temp_cards, weights=temp_probs, k=1)[0]
-                        chosen.append(selected_card)
-                        # 選択したカードを除外
-                        idx = temp_cards.index(selected_card)
-                        temp_cards.pop(idx)
-                        temp_probs.pop(idx)
-                        # 確率を再正規化
-                        if temp_probs:
-                            total = sum(temp_probs)
-                            temp_probs = [p / total for p in temp_probs]
-                    
-                    if len(chosen) < k:
-                        ok = False
-                        break
-                    
-                    hands[p].extend(chosen)
-                    # remove chosen from remain
-                    for c in chosen:
-                        remain.remove(c)
-                except Exception:
-                    ok = False
-                    break
+                chosen = possible_list[:k]
+                hands[p].extend(chosen)
+                # remove chosen from remain
+                for c in chosen:
+                    remain.remove(c)
 
             if not ok:
                 continue
 
-            # もし残りがある(理論上ないはず)なら適当に分配
+            # もし残りがあれば適当に分配
             if remain:
                 ps = list(need.keys())
                 idx = 0
