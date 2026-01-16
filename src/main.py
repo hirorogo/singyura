@@ -211,7 +211,7 @@ class CardTracker:
             self.normalize(player)
             return
 
-        if action is not None:
+        if action is not None and not isinstance(action, list):
             # そのカードを出したので、全プレイヤーが持たない
             for p in range(self.players_num):
                 self.possible[p][action] = 0.0
@@ -379,37 +379,49 @@ class State:
         """場で出せるカードのリストを返す (トンネルルール対応)。
 
         トンネルルール:
-        - そのスートでA(1)が出たら、以後はK側(8→…→K)しか伸ばせない
-        - そのスートでK(13)が出たら、以後はA側(A→…→6)しか伸ばせない
+        - 7を基準に、A側(1-6)とK側(8-13)がある
+        - 通常: 7から両側に伸ばせる
+        - Aが出たら: そのスートはK側(8→K)のみ伸ばせる（A側は封鎖）
+        - Kが出たら: そのスートはA側(A→6)のみ伸ばせる（K側は封鎖）
+        - 両方出たら: 完全に封鎖（もう伸ばせない）
         """
         actions = []
         for suit, n in zip(Suit, range(4)):
+            # 7が出ているか確認（index 6 = 7）
+            is_seven_out = self.field_cards[n][6] == 1
+            
+            if not is_seven_out:
+                # 7がまだ出ていない場合、このスートでは何も出せない
+                continue
+            
             # Aが出ている (index 0) / Kが出ている (index 12)
             is_ace_out = self.field_cards[n][0] == 1
             is_king_out = self.field_cards[n][12] == 1
 
-            # --- 7より小さい側 (A-6) ---
-            # Kが出ている場合のみ、この側を伸ばしてよい
-            if is_king_out:
-                small_side = self.field_cards[n][0:6]  # A..6
-                if small_side[5] == 0:
-                    actions.append(Card(suit, Number.SIX))
-                else:
-                    for i in range(5, -1, -1):
-                        if small_side[i] == 0:
-                            actions.append(Card(suit, self.num_to_Enum(i + 1)))
-                            break
+            # 両方出ていたら、このスートは完全に封鎖されている
+            if is_ace_out and is_king_out:
+                continue
 
-            # --- 7より大きい側 (8-K) ---
-            # Aが出ている場合のみ、この側を伸ばしてよい
-            if is_ace_out:
-                if self.field_cards[n][7] == 0:
-                    actions.append(Card(suit, Number.EIGHT))
-                else:
-                    for i in range(7, 13):
-                        if self.field_cards[n][i] == 0:
-                            actions.append(Card(suit, self.num_to_Enum(i + 1)))
-                            break
+            # --- 7より小さい側 (6→A) ---
+            # Kが出ていない場合のみ、この側を伸ばせる
+            if not is_king_out:
+                small_side = self.field_cards[n][0:6]  # A..6 (indices 0-5)
+                # 7(index 6)の隣は6(index 5)
+                for i in range(5, -1, -1):
+                    if small_side[i] == 0:
+                        # まだ出ていないカードが見つかったので、これが出せる
+                        actions.append(Card(suit, self.num_to_Enum(i + 1)))
+                        break
+
+            # --- 7より大きい側 (8→K) ---
+            # Aが出ていない場合のみ、この側を伸ばせる
+            if not is_ace_out:
+                # 7(index 6)の隣は8(index 7)
+                for i in range(7, 13):
+                    if self.field_cards[n][i] == 0:
+                        # まだ出ていないカードが見つかったので、これが出せる
+                        actions.append(Card(suit, self.num_to_Enum(i + 1)))
+                        break
 
         return list(set(actions))  # 重複排除
 
