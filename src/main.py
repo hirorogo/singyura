@@ -5,10 +5,28 @@ from enum import Enum
 from random import shuffle
 import numpy as np
 
+# 設定ファイルのインポート（オプション）
+try:
+    from config import (
+        FORCE_CPU, CUSTOM_SIMULATION_COUNT, CUSTOM_SIMULATION_DEPTH,
+        GPU_BATCH_SIZE, CPU_BATCH_SIZE, DISABLE_PASS_WITH_LEGAL_ACTIONS,
+        DETERMINIZATION_RETRY_COUNT, MAX_PLAYOUT_DEPTH
+    )
+except ImportError:
+    # デフォルト設定
+    FORCE_CPU = False
+    CUSTOM_SIMULATION_COUNT = None
+    CUSTOM_SIMULATION_DEPTH = None
+    GPU_BATCH_SIZE = 10
+    CPU_BATCH_SIZE = 1
+    DISABLE_PASS_WITH_LEGAL_ACTIONS = True
+    DETERMINIZATION_RETRY_COUNT = 30
+    MAX_PLAYOUT_DEPTH = 300
+
 # GPU acceleration support
 try:
     import cupy as cp
-    GPU_AVAILABLE = cp.cuda.is_available()
+    GPU_AVAILABLE = cp.cuda.is_available() and not FORCE_CPU
     if GPU_AVAILABLE:
         xp = cp  # Use CuPy for array operations
         print("✓ GPU acceleration enabled (CuPy)")
@@ -27,7 +45,11 @@ MY_PLAYER_NUM = 0     # 自分のプレイヤー番号
 # シミュレーション用設定
 # 強さ優先: 探索回数を増やす（遅くなる）
 # GPU使用時は大幅に増やして最強を目指す
-if GPU_AVAILABLE:
+if CUSTOM_SIMULATION_COUNT is not None:
+    SIMULATION_COUNT = CUSTOM_SIMULATION_COUNT
+    SIMULATION_DEPTH = CUSTOM_SIMULATION_DEPTH if CUSTOM_SIMULATION_DEPTH else 200
+    print(f"✓ Custom mode: SIMULATION_COUNT={SIMULATION_COUNT}, DEPTH={SIMULATION_DEPTH}")
+elif GPU_AVAILABLE:
     SIMULATION_COUNT = 2000  # GPU: 10倍のシミュレーション
     SIMULATION_DEPTH = 300   # より深い先読み
     print(f"✓ GPU mode: SIMULATION_COUNT={SIMULATION_COUNT}, DEPTH={SIMULATION_DEPTH}")
@@ -35,6 +57,7 @@ else:
     SIMULATION_COUNT = 200   # CPU: 標準
     SIMULATION_DEPTH = 200
     print(f"✓ CPU mode: SIMULATION_COUNT={SIMULATION_COUNT}, DEPTH={SIMULATION_DEPTH}")
+
 
 
 # --- データクラス定義 ---
@@ -575,8 +598,9 @@ class HybridStrongestAI:
         # これはai_status_report.mdで最も効果的とされている改善策
         candidates = list(my_actions)
         # PASSは出せる手がない場合のみ（3回未満でも）
-        # if state.pass_count[self.my_player_num] < 3:
-        #     candidates.append(None)
+        # config.DISABLE_PASS_WITH_LEGAL_ACTIONS で制御可能
+        if not DISABLE_PASS_WITH_LEGAL_ACTIONS and state.pass_count[self.my_player_num] < 3:
+            candidates.append(None)
 
         if len(candidates) == 1:
             if candidates[0] is None:
@@ -588,7 +612,7 @@ class HybridStrongestAI:
         action_scores = {action: 0 for action in candidates}
 
         # GPU使用時は並列度を上げてバッチ処理（概念的な最適化）
-        batch_size = 10 if GPU_AVAILABLE else 1
+        batch_size = GPU_BATCH_SIZE if GPU_AVAILABLE else CPU_BATCH_SIZE
         
         for batch_start in range(0, self.simulation_count, batch_size):
             batch_end = min(batch_start + batch_size, self.simulation_count)
@@ -708,7 +732,7 @@ class HybridStrongestAI:
         need = {p: len(original_state.players_cards[p]) for p in range(base.players_num) if p != self.my_player_num}
 
         # リトライ
-        for _ in range(30):
+        for _ in range(DETERMINIZATION_RETRY_COUNT):
             random.shuffle(pool)
 
             # 作業用
