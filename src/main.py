@@ -482,7 +482,7 @@ class OpponentModel:
             self.flags[player]["blocker"] += 1
             return
 
-        if action is None:
+        if action is None or isinstance(action, list):
             return
 
         # A/K を早出し → aggressive
@@ -795,10 +795,11 @@ ai_instance = HybridStrongestAI(MY_PLAYER_NUM, simulation_count=SIMULATION_COUNT
 def random_action(state):
     """ランダムAI"""
     my_actions = state.my_actions()
-    if my_actions:
+    if my_actions != []:
         return my_actions[random.randint(0, len(my_actions)-1)]
     else:
-        return None
+        my_actions = []
+        return my_actions
 
 def my_AI(state):
     return ai_instance.get_action(state)
@@ -838,19 +839,23 @@ if __name__ == "__main__":
         print(f"------------ ターン {turn} (Player {current_player}) ------------")
         
         pass_flag = 0
-        action = None
         
+        # 行動の取得
         if current_player == MY_PLAYER_NUM:
             action, pass_flag = my_AI(state)
         else:
             action = random_action(state)
-            if action is None:
-                pass_flag = 1
         
-        # アクションの表示
-        if pass_flag == 1:
-            print(f"Player {current_player}: PASS ({state.pass_count[current_player] + 1}回目)")
-            state.next(None, 1) # パス
+        # 出したカードの表示
+        if state.my_actions() == [] or pass_flag == 1:
+            print("パス")
+            if state.pass_count[current_player] >= 3:
+                print(f"\n* プレイヤー {current_player} 番 バースト")
         else:
-            print(f"Player {current_player}: Play {action}")
-            state.next(action, 0) # プレイ
+            print(action)
+        
+        # 次の状態の取得
+        if pass_flag == 1:
+            state = state.next(action, pass_flag)
+        else:
+            state = state.next(action)
