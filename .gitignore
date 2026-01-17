@@ -41,3 +41,15 @@ Thumbs.db
 *.tmp
 __pycache__/
 *.pyc
+
+# Temporary test files
+src/test_*.py
+src/*_test.py
+src/*_benchmark.py
+src/analysis_*.py
+src/baseline_*.py
+src/comprehensive_*.py
+src/extended_*.py
+src/final_*.py
+src/verify_*.py
+src/validation_*.py
