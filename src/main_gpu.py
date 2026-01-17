@@ -415,7 +415,7 @@ class State:
                     try:
                         self.put_card(card)
                     except:
-                         pass
+                        pass  # 既に出ているなどのエラーは無視
                 hand.clear()
                 self.out_player.append(p_idx)
         else:
@@ -427,7 +427,7 @@ class State:
                     pass
 
         if len(self.players_cards[p_idx]) == 0 and p_idx not in self.out_player:
-             return self
+            return self
              
         self.next_player()
         return self

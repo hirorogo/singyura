@@ -39,9 +39,9 @@ def run_benchmark(game_count=100):
         # Determine winner
         winner = -1
         for p, hand in enumerate(state.players_cards):
-             if len(hand) == 0 and p not in state.out_player:
-                 winner = p
-                 break
+            if len(hand) == 0 and p not in state.out_player:
+                winner = p
+                break
         
         if winner == -1:
             survivors = [p for p in range(state.players_num) if p not in state.out_player]

@@ -425,7 +425,7 @@ class State:
                     try:
                         self.put_card(card)
                     except:
-                         pass # 既に出ているなどのエラーは無視
+                        pass  # 既に出ているなどのエラーは無視
                 hand.clear() # 手札消滅
                 self.out_player.append(p_idx)
         else:
@@ -439,7 +439,7 @@ class State:
 
         # 勝利判定チェック（手札が0になったら）
         if len(self.players_cards[p_idx]) == 0 and p_idx not in self.out_player:
-             return self
+            return self
              
         # 次のプレイヤーへ
         self.next_player()
