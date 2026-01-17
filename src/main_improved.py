@@ -18,6 +18,10 @@ ENABLE_PASS_REMOVAL = True  # PASS候補の完全除外
 ENABLE_WEIGHTED_DETERMINIZATION = True  # 重み付け確定化
 ENABLE_ADAPTIVE_ROLLOUT = True  # 適応的ロールアウト
 
+# Phase 2改善フラグ
+ENABLE_TUNNEL_LOCK = True  # トンネルロック戦略
+ENABLE_BURST_FORCE = True  # バースト誘導戦略
+
 # --- データクラス定義 ---
 
 class Suit(Enum):
@@ -540,6 +544,9 @@ class ImprovedHybridAI:
             return candidates[0], 0
 
         tracker = self._build_tracker_from_history(state)
+        
+        # Phase 2改善: 戦略的評価を適用
+        strategic_bonus = self._evaluate_strategic_actions(state, tracker, my_actions)
 
         action_scores = {action: 0 for action in candidates}
 
@@ -556,6 +563,11 @@ class ImprovedHybridAI:
                     action_scores[first_action] += 1
                 elif winner != -1:
                     action_scores[first_action] -= 1
+        
+        # Phase 2改善: 戦略ボーナスを加算
+        for action in candidates:
+            if action in strategic_bonus:
+                action_scores[action] += strategic_bonus[action]
 
         best_action = max(action_scores, key=action_scores.get)
         return best_action, 0
@@ -588,6 +600,117 @@ class ImprovedHybridAI:
         else:
             # 従来の実装
             return random.choice(my_actions), 0
+    
+    def _evaluate_strategic_actions(self, state, tracker, my_actions):
+        """Phase 2改善: 戦略的評価
+        
+        トンネルロックとバースト誘導の戦略ボーナスを計算
+        """
+        bonus = {}
+        my_hand = state.players_cards[self.my_player_num]
+        
+        # トンネルロック戦略
+        if ENABLE_TUNNEL_LOCK:
+            tunnel_bonus = self._evaluate_tunnel_lock(state, my_hand, my_actions)
+            for action, score in tunnel_bonus.items():
+                bonus[action] = bonus.get(action, 0) + score
+        
+        # バースト誘導戦略
+        if ENABLE_BURST_FORCE:
+            burst_bonus = self._evaluate_burst_force(state, tracker, my_actions)
+            for action, score in burst_bonus.items():
+                bonus[action] = bonus.get(action, 0) + score
+        
+        return bonus
+    
+    def _evaluate_tunnel_lock(self, state, my_hand, my_actions):
+        """トンネルロック戦略
+        
+        相手がトンネルを開けている場合、逆側の端カードを温存して封鎖する
+        """
+        bonus = {}
+        
+        for suit_idx, suit in enumerate(Suit):
+            # Aが出ている場合、Kを温存（出さない方向にペナルティ）
+            if state.field_cards[suit_idx][0] == 1:  # A (index 0) が出ている
+                k_card = Card(suit, Number.KING)
+                if k_card in my_hand and k_card in my_actions:
+                    # Kを出すことに小さなペナルティ（出さない方が有利）
+                    bonus[k_card] = -15
+                    
+                # K手前のQ, Jも温存傾向
+                q_card = Card(suit, Number.QUEEN)
+                if q_card in my_hand and q_card in my_actions:
+                    bonus[q_card] = -8
+                    
+                j_card = Card(suit, Number.JACK)
+                if j_card in my_hand and j_card in my_actions:
+                    bonus[j_card] = -5
+            
+            # Kが出ている場合、Aを温存
+            if state.field_cards[suit_idx][12] == 1:  # K (index 12) が出ている
+                a_card = Card(suit, Number.ACE)
+                if a_card in my_hand and a_card in my_actions:
+                    # Aを出すことに小さなペナルティ
+                    bonus[a_card] = -15
+                    
+                # A手前の2, 3も温存傾向
+                two_card = Card(suit, Number.TWO)
+                if two_card in my_hand and two_card in my_actions:
+                    bonus[two_card] = -8
+                    
+                three_card = Card(suit, Number.THREE)
+                if three_card in my_hand and three_card in my_actions:
+                    bonus[three_card] = -5
+        
+        return bonus
+    
+    def _evaluate_burst_force(self, state, tracker, my_actions):
+        """バースト誘導戦略
+        
+        パス回数が多い相手が持っていないスートを急速に進める
+        """
+        bonus = {}
+        
+        # 各プレイヤーのパス回数をチェック
+        for player in range(state.players_num):
+            if player == self.my_player_num:
+                continue
+            if player in state.out_player:
+                continue
+                
+            pass_count = state.pass_count[player]
+            
+            # パス回数が2回以上の場合、危険水域と判断
+            if pass_count >= 2:
+                # このプレイヤーが持っていなさそうなスートを推論
+                weak_suits = self._infer_weak_suits(state, tracker, player)
+                
+                # 弱いスートを進めることにボーナス
+                for action in my_actions:
+                    if action.suit in weak_suits:
+                        # パス回数が多いほど大きなボーナス（控えめに）
+                        bonus[action] = bonus.get(action, 0) + (pass_count * 5)
+        
+        return bonus
+    
+    def _infer_weak_suits(self, state, tracker, player):
+        """相手の弱いスート（持っていないカードが多そうなスート）を推論"""
+        weak_suits = []
+        
+        # 各スートについて、そのプレイヤーが持っている可能性のあるカード数を数える
+        for suit in Suit:
+            possible_count = 0
+            for number in Number:
+                card = Card(suit, number)
+                if card in tracker.possible[player]:
+                    possible_count += 1
+            
+            # 持っている可能性のあるカードが少ない（4枚以下）なら弱いスート
+            if possible_count <= 4:
+                weak_suits.append(suit)
+        
+        return weak_suits
 
     def _build_tracker_from_history(self, state):
         """履歴を先頭から逐次再生し、その時点の盤面(legal_actions)でパス推論を行う。"""
