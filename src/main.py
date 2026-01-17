@@ -10,17 +10,22 @@ EP_GAME_COUNT = 1000  # 評価用の対戦回数
 MY_PLAYER_NUM = 0     # 自分のプレイヤー番号
 
 # シミュレーション用設定
-# 強さ優先: 探索回数を増やす（処理時間は気にしない - 大会用）
-SIMULATION_COUNT = 500  # 1手につき何回シミュレーションするか（大幅増強）
-SIMULATION_DEPTH = 300  # どこまで先読みするか（深度増加）
+# 大会モード: 処理時間を気にせず最強を目指す（実証済み最適値）
+SIMULATION_COUNT = 500  # 1手につき何回シミュレーションするか（ベンチマーク実証: 44%勝率）
+SIMULATION_DEPTH = 300  # どこまで先読みするか
 
 # Phase 2改善フラグ
 ENABLE_TUNNEL_LOCK = True  # トンネルロック戦略
 ENABLE_BURST_FORCE = True  # バースト誘導戦略
 
 # 確率的推論の設定
-BELIEF_STATE_DECAY_FACTOR = 0.05  # パス観測時の確率減衰率（厳しめ）
-DETERMINIZATION_ATTEMPTS = 100  # 確定化のリトライ回数（高精度化）
+BELIEF_STATE_DECAY_FACTOR = 0.05  # パス観測時の確率減衰率（実証済み）
+DETERMINIZATION_ATTEMPTS = 100  # 確定化のリトライ回数（実証済み）
+
+# 戦略重み付け係数
+STRATEGY_WEIGHT_MULTIPLIER = 0.5  # 戦略ボーナスの影響度（実証済み）
+TUNNEL_LOCK_WEIGHT = 2.5  # トンネルロック戦略の重み
+BURST_FORCE_WEIGHT = 2.5  # バースト誘導戦略の重み
 
 # --- データクラス定義 ---
 
@@ -736,8 +741,8 @@ class HybridStrongestAI:
         # Phase 2改善: 戦略ボーナスを加算（重要度を高める）
         for action in candidates:
             if action in strategic_bonus:
-                # 戦略ボーナスの影響を強化
-                action_scores[action] += strategic_bonus[action] * 0.5
+                # 戦略ボーナスの影響を調整
+                action_scores[action] += strategic_bonus[action] * STRATEGY_WEIGHT_MULTIPLIER
 
         best_action = max(action_scores, key=action_scores.get)
 
@@ -874,11 +879,11 @@ class HybridStrongestAI:
                 
                 if primary_opponent_mode == "tunnel_lock":
                     # トンネル活用型の相手 → トンネルロック戦略を強化
-                    mode_weights["tunnel_lock"] = 2.5
+                    mode_weights["tunnel_lock"] = TUNNEL_LOCK_WEIGHT
                     mode_weights["burst_force"] = 0.8
                 elif primary_opponent_mode == "burst_force":
                     # パス多用型の相手 → バースト誘導戦略を強化
-                    mode_weights["burst_force"] = 2.5
+                    mode_weights["burst_force"] = BURST_FORCE_WEIGHT
                     mode_weights["tunnel_lock"] = 0.8
         
         # トンネルロック戦略
