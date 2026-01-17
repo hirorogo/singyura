@@ -527,6 +527,7 @@ class HybridStrongestAI:
 
         my_actions = state.my_actions()
         if not my_actions:
+            # Return a default action when no actions are available
             return None, 1
 
         # 勝率最大化: 戦略的フィルタリングを弱め、PIMCに判断を委ねる
@@ -542,6 +543,9 @@ class HybridStrongestAI:
         tracker = self._build_tracker_from_history(state)
 
         action_scores = {action: 0 for action in candidates}
+
+        # Debug logging for candidate actions
+        print(f"[DEBUG] Candidate actions: {candidates}")
 
         for _ in range(self.simulation_count):
             determinized_state = self._create_determinized_state_with_constraints(state, tracker)
@@ -561,7 +565,13 @@ class HybridStrongestAI:
                 elif winner != -1:
                     action_scores[first_action] -= 1
 
+        # Debug logging for candidate actions and their scores
+        print(f"[DEBUG] Action scores: {action_scores}")
+
         best_action = max(action_scores, key=action_scores.get)
+
+        # Debug logging for the chosen action
+        print(f"[DEBUG] Chosen action: {best_action}")
 
         if best_action is None:
             return None, 1

@@ -1,7 +1,7 @@
 import time
 from main import State, HybridStrongestAI, MY_PLAYER_NUM, random_action, SIMULATION_COUNT
 
-def run_benchmark(game_count=100):
+def run_benchmark(game_count=10):  # Reduce the default game count for debugging
     wins = [0] * 3
     ai_pos = 0 # AI is Player 0
     
