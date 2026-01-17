@@ -10,13 +10,17 @@ EP_GAME_COUNT = 1000  # 評価用の対戦回数
 MY_PLAYER_NUM = 0     # 自分のプレイヤー番号
 
 # シミュレーション用設定
-# 強さ優先: 探索回数を増やす（遅くなる）
-SIMULATION_COUNT = 300  # 1手につき何回シミュレーションするか（最適化済み）
-SIMULATION_DEPTH = 200  # どこまで先読みするか
+# 強さ優先: 探索回数を増やす（処理時間は気にしない - 大会用）
+SIMULATION_COUNT = 500  # 1手につき何回シミュレーションするか（大幅増強）
+SIMULATION_DEPTH = 300  # どこまで先読みするか（深度増加）
 
 # Phase 2改善フラグ
 ENABLE_TUNNEL_LOCK = True  # トンネルロック戦略
 ENABLE_BURST_FORCE = True  # バースト誘導戦略
+
+# 確率的推論の設定
+BELIEF_STATE_DECAY_FACTOR = 0.05  # パス観測時の確率減衰率（厳しめ）
+DETERMINIZATION_ATTEMPTS = 100  # 確定化のリトライ回数（高精度化）
 
 # --- データクラス定義 ---
 
@@ -211,7 +215,7 @@ class CardTracker:
 
         - actionを出したなら、そのカードは全員が持たない（確率0.0）
         - passしたなら、その時点の legal_actions のカード所持確率を大幅に下げる
-          （完全に0にはせず、0.01程度に下げる = 戦略的パスの可能性も考慮）
+          （完全に0にはせず、微小値に下げる = 戦略的パスの可能性も考慮）
         """
         if player in self.out_player:
             return
@@ -222,7 +226,7 @@ class CardTracker:
             
             # パス回数に応じて確率減衰率を変化
             # 多くパスしているほど、本当に持っていない可能性が高い
-            decay_factor = 0.05 if self.pass_counts[player] >= 2 else 0.1
+            decay_factor = BELIEF_STATE_DECAY_FACTOR if self.pass_counts[player] >= 2 else (BELIEF_STATE_DECAY_FACTOR * 2)
             
             for c in legal:
                 if c in self.belief[player]:
@@ -691,8 +695,10 @@ class HybridStrongestAI:
         # 動的シミュレーション回数: 候補が少ない場合はより深く探索
         actual_sim_count = self.simulation_count
         if len(candidates) <= 2:
-            actual_sim_count = int(self.simulation_count * 1.5)
+            actual_sim_count = int(self.simulation_count * 2.0)  # 2倍に増強
         elif len(candidates) <= 3:
+            actual_sim_count = int(self.simulation_count * 1.5)
+        elif len(candidates) <= 5:
             actual_sim_count = int(self.simulation_count * 1.2)
 
         for _ in range(actual_sim_count):
@@ -708,15 +714,30 @@ class HybridStrongestAI:
 
                 winner = self._playout(sim_state)
 
+                # より詳細なスコアリング
                 if winner == self.my_player_num:
-                    action_scores[first_action] += 1
-                elif winner != -1:
-                    action_scores[first_action] -= 1
+                    action_scores[first_action] += 2  # 勝利は+2点
+                elif winner == -1:
+                    # 引き分け（全員バースト）は0点
+                    pass
+                else:
+                    action_scores[first_action] -= 1  # 負けは-1点
+                    
+                    # 手札枚数による追加評価（終了時点での手札が少ないほど良い）
+                    my_remaining = len(sim_state.players_cards[self.my_player_num])
+                    winner_remaining = len(sim_state.players_cards[winner])
+                    
+                    # 手札差に応じた細かいスコア調整
+                    if my_remaining < winner_remaining:
+                        action_scores[first_action] += 0.3  # 惜しい負けは少しプラス
+                    elif my_remaining - winner_remaining >= 3:
+                        action_scores[first_action] -= 0.3  # 大差の負けは少しマイナス
         
-        # Phase 2改善: 戦略ボーナスを加算
+        # Phase 2改善: 戦略ボーナスを加算（重要度を高める）
         for action in candidates:
             if action in strategic_bonus:
-                action_scores[action] += strategic_bonus[action]
+                # 戦略ボーナスの影響を強化
+                action_scores[action] += strategic_bonus[action] * 0.5
 
         best_action = max(action_scores, key=action_scores.get)
 
@@ -1466,7 +1487,7 @@ class HybridStrongestAI:
         need = {p: len(original_state.players_cards[p]) for p in range(base.players_num) if p != self.my_player_num}
 
         # 確率的割当を試行
-        for attempt in range(50):  # リトライ回数を増やす
+        for attempt in range(DETERMINIZATION_ATTEMPTS):  # リトライ回数を設定値から取得
             remain = list(pool)
             hands = {p: [] for p in need.keys()}
             
