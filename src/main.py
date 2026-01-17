@@ -534,10 +534,10 @@ class HybridStrongestAI:
             # Return a default action when no actions are available
             return None, 1
 
-        # 勝率最大化: 戦略的フィルタリングを弱め、PIMCに判断を委ねる
+        # PASSは基本的に不利なので候補から除外（シミュレーションの分散を避ける）
+        # 出せるカードがある場合は必ず出す方が有利
         candidates = list(my_actions)
-        if state.pass_count[self.my_player_num] < 3:
-            candidates.append(None)
+        # NOTE: 戦略的PASSは将来の改善で検討可能だが、現在は効果が低いため除外
 
         if len(candidates) == 1:
             if candidates[0] is None:
@@ -551,10 +551,14 @@ class HybridStrongestAI:
 
         action_scores = {action: 0 for action in candidates}
 
-        # Debug logging for candidate actions
-        print(f"[DEBUG] Candidate actions: {candidates}")
+        # 動的シミュレーション回数: 候補が少ない場合はより深く探索
+        actual_sim_count = self.simulation_count
+        if len(candidates) <= 2:
+            actual_sim_count = int(self.simulation_count * 1.5)
+        elif len(candidates) <= 3:
+            actual_sim_count = int(self.simulation_count * 1.2)
 
-        for _ in range(self.simulation_count):
+        for _ in range(actual_sim_count):
             determinized_state = self._create_determinized_state_with_constraints(state, tracker)
 
             for first_action in candidates:
@@ -577,40 +581,112 @@ class HybridStrongestAI:
             if action in strategic_bonus:
                 action_scores[action] += strategic_bonus[action]
 
-        # Debug logging for candidate actions and their scores
-        print(f"[DEBUG] Action scores: {action_scores}")
-
         best_action = max(action_scores, key=action_scores.get)
-
-        # Debug logging for the chosen action
-        print(f"[DEBUG] Chosen action: {best_action}")
 
         if best_action is None:
             return None, 1
         return best_action, 0
 
     def _rollout_policy_action(self, state):
-        """プレイアウト用の軽量ポリシー（再帰禁止）。"""
+        """プレイアウト用の軽量ポリシー（再帰禁止）。
+        
+        参考用コードの戦略を取り入れた改善版。
+        """
         my_actions = state.my_actions()
         if not my_actions:
             return None, 1
 
-        # ロールアウトでは基本PASSしない（探索の分散を避ける）
+        # 1. A/K（端カード）を優先的に出す
         ends = [a for a in my_actions if a.number in (Number.ACE, Number.KING)]
         if ends:
             return random.choice(ends), 0
 
-        hand_strs = [str(c) for c in state.players_cards[state.turn_player]]
-        safe = [a for a in my_actions if self._is_safe_move(a, hand_strs)]
-        if safe:
-            return random.choice(safe), 0
+        # 2. 連続カード（ラン）の起点を優先
+        my_hand = state.players_cards[state.turn_player]
+        run_candidates = []
+        for action in my_actions:
+            run_length = self._count_run_length(action, my_hand)
+            if run_length >= 2:
+                run_candidates.append((action, run_length))
+        
+        if run_candidates:
+            # 最も長いランを持つカードを選択
+            run_candidates.sort(key=lambda x: x[1], reverse=True)
+            return run_candidates[0][0], 0
+
+        # 3. 次のカードを自分が持っているカードを優先（Safe判定）
+        safe_moves = []
+        for action in my_actions:
+            val = action.number.val
+            # 次のカードを特定
+            if val < 7:
+                next_val = val - 1
+            elif val > 7:
+                next_val = val + 1
+            else:
+                continue  # 7は初期配置で自動的に出される
+            
+            # 次のカードを自分が持っているかチェック
+            if 1 <= next_val <= 13:
+                next_card = Card(action.suit, self._index_to_number(next_val - 1))
+                if next_card and next_card in my_hand:
+                    safe_moves.append(action)
+        
+        if safe_moves:
+            return random.choice(safe_moves), 0
+        
+        # 4. 自分が多く持っているスートを優先
+        suit_counts = {}
+        for c in my_hand:
+            suit_counts[c.suit] = suit_counts.get(c.suit, 0) + 1
+        
+        # スートのカード数が最も多いアクションを優先
+        best_actions = []
+        best_count = -1
+        for action in my_actions:
+            count = suit_counts.get(action.suit, 0)
+            if count > best_count:
+                best_count = count
+                best_actions = [action]
+            elif count == best_count:
+                best_actions.append(action)
+        
+        if best_actions:
+            return random.choice(best_actions), 0
 
         return random.choice(my_actions), 0
+    
+    def _count_run_length(self, action, my_hand):
+        """連続して出せるカードの長さを数える"""
+        num_idx = action.number.val - 1
+        suit = action.suit
+        run_length = 0
+        
+        if num_idx < 6:  # 7より小さい側
+            check_idx = num_idx - 1
+            while check_idx >= 0:
+                next_card = Card(suit, self._index_to_number(check_idx))
+                if next_card in my_hand:
+                    run_length += 1
+                    check_idx -= 1
+                else:
+                    break
+        elif num_idx > 6:  # 7より大きい側
+            check_idx = num_idx + 1
+            while check_idx <= 12:
+                next_card = Card(suit, self._index_to_number(check_idx))
+                if next_card in my_hand:
+                    run_length += 1
+                    check_idx += 1
+                else:
+                    break
+        
+        return run_length
     
     def _evaluate_strategic_actions(self, state, tracker, my_actions):
         """Phase 2改善: 戦略的評価
         
-        トンネルロックとバースト誘導の戦略ボーナスを計算
+        トンネルロック、バースト誘導、参考用コードのヒューリスティック戦略を組み合わせる
         """
         bonus = {}
         my_hand = state.players_cards[self.my_player_num]
@@ -627,47 +703,171 @@ class HybridStrongestAI:
             for action, score in burst_bonus.items():
                 bonus[action] = bonus.get(action, 0) + score
         
+        # 参考用コードからのヒューリスティック戦略を適用
+        heuristic_bonus = self._evaluate_heuristic_strategy(state, my_hand, my_actions)
+        for action, score in heuristic_bonus.items():
+            bonus[action] = bonus.get(action, 0) + score
+        
+        # 連続カード（ラン）戦略
+        run_bonus = self._evaluate_run_strategy(state, my_hand, my_actions)
+        for action, score in run_bonus.items():
+            bonus[action] = bonus.get(action, 0) + score
+        
+        # ゲーム終盤戦略（残り手札が少ない場合）
+        if len(my_hand) <= 5:
+            endgame_bonus = self._evaluate_endgame_strategy(state, my_hand, my_actions)
+            for action, score in endgame_bonus.items():
+                bonus[action] = bonus.get(action, 0) + score
+        
+        # ブロック戦略（相手を詰まらせる）
+        block_bonus = self._evaluate_block_strategy(state, tracker, my_actions)
+        for action, score in block_bonus.items():
+            bonus[action] = bonus.get(action, 0) + score
+        
         return bonus
     
-    def _evaluate_tunnel_lock(self, state, my_hand, my_actions):
-        """トンネルロック戦略
+    def _evaluate_heuristic_strategy(self, state, my_hand, my_actions):
+        """参考用コード（二次試験.ipynb）のヒューリスティック戦略
         
-        相手がトンネルを開けている場合、逆側の端カードを温存して封鎖する
+        トンネルルール対応版:
+        - 次のカードを自分が持っている場合にボーナス
+        - 同じスートのカード数によるボーナス
+        - 自分の新たなアクションを開くカードへのボーナス
+        - 隣接カードが場にあるかチェック
+        """
+        bonus = {}
+        suit_to_index = {Suit.SPADE: 0, Suit.CLUB: 1, Suit.HEART: 2, Suit.DIAMOND: 3}
+        
+        # 各スートのカード枚数をカウント
+        suit_counts = {suit: 0 for suit in Suit}
+        for card in my_hand:
+            suit_counts[card.suit] += 1
+        
+        for card in my_actions:
+            suit = card.suit
+            suit_index = suit_to_index[suit]
+            number_index = card.number.val - 1  # 0-based index
+            score = 0
+            
+            # トンネルルール対応：A/Kの扱い
+            # 両方のトンネルが開いていない場合、A/Kを出すと相手に有利になる可能性がある
+            is_ace_out = state.field_cards[suit_index][0] == 1
+            is_king_out = state.field_cards[suit_index][12] == 1
+            
+            if number_index == 0:  # A
+                if is_king_out:
+                    # Kが出ている場合、Aを出すとトンネルが閉じる → やや有利
+                    score += 5
+                else:
+                    # Kが出ていない場合、Aを温存した方が良い
+                    score -= 5
+            elif number_index == 12:  # K
+                if is_ace_out:
+                    # Aが出ている場合、Kを出すとトンネルが閉じる → やや有利
+                    score += 5
+                else:
+                    # Aが出ていない場合、Kを温存した方が良い
+                    score -= 5
+            
+            # 隣接カードのチェック
+            next_indices = []
+            if number_index < 6:  # 7より小さい側
+                next_indices.append(number_index - 1)
+            elif number_index > 6:  # 7より大きい側
+                next_indices.append(number_index + 1)
+            
+            for next_number_index in next_indices:
+                if 0 <= next_number_index <= 12:
+                    if state.field_cards[suit_index][next_number_index] == 1:
+                        # 次のカードがすでに場にある → 良い
+                        score += 5
+                    else:
+                        # 次のカードが場にない → 相手に道を開く可能性
+                        score -= 5
+                        
+                        # ただし、次のカードを自分が持っていれば軽減（Safe判定）
+                        next_number = self._index_to_number(next_number_index)
+                        if next_number:
+                            next_card = Card(suit, next_number)
+                            if next_card in my_hand:
+                                score += 12  # 次のカードを自分が持っている → 制御可能
+            
+            # 同じスートのカード数が多いほどボーナス
+            score += suit_counts[suit] * 2
+            
+            # 自分の新たなアクションを開くカードへのボーナス
+            potential_new_moves = 0
+            for c in my_hand:
+                if c.suit == suit:
+                    c_index = c.number.val - 1
+                    # このカードを出すことで次に出せるようになるカードがあるか
+                    if (number_index < 6 and c_index == number_index - 1) or \
+                       (number_index > 6 and c_index == number_index + 1):
+                        potential_new_moves += 1
+            score += potential_new_moves * 10
+            
+            bonus[card] = score
+        
+        return bonus
+    
+    def _index_to_number(self, index):
+        """0-based indexをNumber Enumに変換"""
+        number_list = [Number.ACE, Number.TWO, Number.THREE, Number.FOUR,
+                       Number.FIVE, Number.SIX, Number.SEVEN, Number.EIGHT,
+                       Number.NINE, Number.TEN, Number.JACK, Number.QUEEN, Number.KING]
+        if 0 <= index <= 12:
+            return number_list[index]
+        return None
+    
+    def _evaluate_tunnel_lock(self, state, my_hand, my_actions):
+        """トンネルロック戦略（改善版）
+        
+        トンネルルール:
+        - Aが出た場合、K側（8→...→K）のみ伸ばせる
+        - Kが出た場合、A側（A→...→6）のみ伸ばせる
+        
+        戦略:
+        - 相手がトンネルを開けている場合（A or K が出ている）、
+          逆側の端カードを温存して封鎖することで相手を詰まらせる
+        - ただし、自分がその方向に多くのカードを持っている場合は出した方が良い
         """
         bonus = {}
         
         for suit_idx, suit in enumerate(Suit):
-            # Aが出ている場合、Kを温存（出さない方向にペナルティ）
-            if state.field_cards[suit_idx][0] == 1:  # A (index 0) が出ている
+            is_ace_out = state.field_cards[suit_idx][0] == 1
+            is_king_out = state.field_cards[suit_idx][12] == 1
+            
+            # 自分がこのスートで持っているカードの方向性を分析
+            my_high_cards = 0  # 8-K側のカード
+            my_low_cards = 0   # A-6側のカード
+            for card in my_hand:
+                if card.suit == suit:
+                    if card.number.val >= 8:
+                        my_high_cards += 1
+                    elif card.number.val <= 6:
+                        my_low_cards += 1
+            
+            # Aが出ている場合（K側のみ伸ばせる）
+            if is_ace_out and not is_king_out:
                 k_card = Card(suit, Number.KING)
                 if k_card in my_hand and k_card in my_actions:
-                    # Kを出すことに小さなペナルティ（出さない方が有利）
-                    bonus[k_card] = -15
-                    
-                # K手前のQ, Jも温存傾向
-                q_card = Card(suit, Number.QUEEN)
-                if q_card in my_hand and q_card in my_actions:
-                    bonus[q_card] = -8
-                    
-                j_card = Card(suit, Number.JACK)
-                if j_card in my_hand and j_card in my_actions:
-                    bonus[j_card] = -5
+                    # 自分がK側に多くのカードを持っている場合は出した方が良い
+                    if my_high_cards >= 3:
+                        bonus[k_card] = 8  # Kを出してトンネルを閉じる
+                    else:
+                        # Kを温存して相手を詰まらせる
+                        bonus[k_card] = -10
             
-            # Kが出ている場合、Aを温存
-            if state.field_cards[suit_idx][12] == 1:  # K (index 12) が出ている
+            # Kが出ている場合（A側のみ伸ばせる）
+            if is_king_out and not is_ace_out:
                 a_card = Card(suit, Number.ACE)
                 if a_card in my_hand and a_card in my_actions:
-                    # Aを出すことに小さなペナルティ
-                    bonus[a_card] = -15
-                    
-                # A手前の2, 3も温存傾向
-                two_card = Card(suit, Number.TWO)
-                if two_card in my_hand and two_card in my_actions:
-                    bonus[two_card] = -8
-                    
-                three_card = Card(suit, Number.THREE)
-                if three_card in my_hand and three_card in my_actions:
-                    bonus[three_card] = -5
+                    # 自分がA側に多くのカードを持っている場合は出した方が良い
+                    if my_low_cards >= 3:
+                        bonus[a_card] = 8  # Aを出してトンネルを閉じる
+                    else:
+                        # Aを温存して相手を詰まらせる
+                        bonus[a_card] = -10
         
         return bonus
     
@@ -717,6 +917,127 @@ class HybridStrongestAI:
                 weak_suits.append(suit)
         
         return weak_suits
+    
+    def _evaluate_run_strategy(self, state, my_hand, my_actions):
+        """連続カード（ラン）戦略
+        
+        連続して出せるカードがある場合、その起点となるカードに高いボーナスを与える
+        """
+        bonus = {}
+        suit_to_index = {Suit.SPADE: 0, Suit.CLUB: 1, Suit.HEART: 2, Suit.DIAMOND: 3}
+        
+        for action in my_actions:
+            suit = action.suit
+            suit_idx = suit_to_index[suit]
+            num_idx = action.number.val - 1
+            
+            # このカードを出した後、連続して出せるカードを数える
+            run_length = 0
+            
+            if num_idx < 6:  # 7より小さい側
+                # 下方向に連続して出せるか
+                check_idx = num_idx - 1
+                while check_idx >= 0:
+                    next_card = Card(suit, self._index_to_number(check_idx))
+                    if next_card in my_hand:
+                        run_length += 1
+                        check_idx -= 1
+                    else:
+                        break
+            elif num_idx > 6:  # 7より大きい側
+                # 上方向に連続して出せるか
+                check_idx = num_idx + 1
+                while check_idx <= 12:
+                    next_card = Card(suit, self._index_to_number(check_idx))
+                    if next_card in my_hand:
+                        run_length += 1
+                        check_idx += 1
+                    else:
+                        break
+            
+            # 連続カードが長いほど大きなボーナス
+            if run_length >= 1:
+                bonus[action] = run_length * 8
+        
+        return bonus
+    
+    def _evaluate_endgame_strategy(self, state, my_hand, my_actions):
+        """ゲーム終盤戦略
+        
+        残り手札が少ない場合は、確実に出せるカードを優先する
+        """
+        bonus = {}
+        
+        # 手札枚数に応じたボーナス倍率
+        hand_size = len(my_hand)
+        multiplier = max(1, 6 - hand_size)  # 残り5枚で×1、残り1枚で×5
+        
+        for action in my_actions:
+            score = 0
+            
+            # 出した後に確実に次のカードも出せる場合（連鎖可能）
+            val = action.number.val
+            if val == 1 or val == 13:
+                # 端カードは確実に出せるので高評価
+                score += 15 * multiplier
+            else:
+                # 次のカードを持っているか確認
+                if val < 7:
+                    next_val = val - 1
+                else:
+                    next_val = val + 1
+                
+                if 1 <= next_val <= 13:
+                    next_card = Card(action.suit, self._index_to_number(next_val - 1))
+                    if next_card in my_hand:
+                        score += 10 * multiplier
+            
+            if score > 0:
+                bonus[action] = score
+        
+        return bonus
+    
+    def _evaluate_block_strategy(self, state, tracker, my_actions):
+        """ブロック戦略
+        
+        相手が出そうとしているスートを先に進めて、相手のカードを出せなくする
+        """
+        bonus = {}
+        suit_to_index = {Suit.SPADE: 0, Suit.CLUB: 1, Suit.HEART: 2, Suit.DIAMOND: 3}
+        
+        for player in range(state.players_num):
+            if player == self.my_player_num or player in state.out_player:
+                continue
+            
+            # このプレイヤーが出せそうなカードを推論
+            for action in my_actions:
+                suit = action.suit
+                suit_idx = suit_to_index[suit]
+                num_idx = action.number.val - 1
+                
+                # 次のカードを相手が持っている可能性が高い場合、
+                # このカードを出すことで相手を助けてしまう
+                # 逆に、相手が持っていない可能性が高い場合はボーナス
+                
+                next_indices = []
+                if num_idx < 6:
+                    next_indices.append(num_idx - 1)
+                elif num_idx > 6:
+                    next_indices.append(num_idx + 1)
+                
+                for next_idx in next_indices:
+                    if 0 <= next_idx <= 12:
+                        next_card = Card(suit, self._index_to_number(next_idx))
+                        
+                        # 相手がこのカードを持っていない可能性が高い場合
+                        if next_card not in tracker.possible[player]:
+                            # 相手が出せないので、この方向を進めるのは良い
+                            bonus[action] = bonus.get(action, 0) + 3
+                        elif next_card in tracker.possible[player]:
+                            # 相手が持っている可能性がある → やや不利
+                            bonus[action] = bonus.get(action, 0) - 2
+        
+        return bonus
 
     def _build_tracker_from_history(self, state):
         """履歴を先頭から逐次再生し、その時点の盤面(legal_actions)でパス推論を行う。"""
@@ -753,10 +1074,8 @@ class HybridStrongestAI:
                     tracker.mark_out(p)
             else:
                 if a is not None:
-                    try:
-                        replay_state.put_card(a)
-                    except Exception:
-                        pass
+                    # カードを場に置く（エラーは無視 - すでに置かれている場合など）
+                    replay_state.put_card(a)
 
             # 3) 次手番へ（out_player をスキップ）
             original = replay_state.turn_player
