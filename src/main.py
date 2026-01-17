@@ -805,11 +805,10 @@ ai_instance = HybridStrongestAI(MY_PLAYER_NUM, simulation_count=SIMULATION_COUNT
 def random_action(state):
     """ランダムAI"""
     my_actions = state.my_actions()
-    if my_actions != []:
+    if my_actions:
         return my_actions[random.randint(0, len(my_actions)-1)]
     else:
-        my_actions = []
-        return my_actions
+        return None
 
 def my_AI(state):
     return ai_instance.get_action(state)
