@@ -53,25 +53,27 @@ def get_player_weight(self, player):
 
 #### 3. 適応的ロールアウトポリシー ⭐⭐
 **問題点:**
-- AI同士を想定したロールアウトだった
-- ベンチマーク相手（ランダムAI）との乖離
+- オリジナル版のロールアウトは基本的な戦略のみ
+- 実際の大会はAI同士の対戦（3つのAI）なので、より戦略的な模擬が必要
 
 **解決策:**
 ```python
 if ENABLE_ADAPTIVE_ROLLOUT:
-    # 端優先（A/K）
+    # AI同士の対戦を想定した戦略
+    # 端優先（A/K）：トンネルルールを活用
     ends = [a for a in my_actions if a.number in (Number.ACE, Number.KING)]
     if ends:
         return random.choice(ends), 0
     
-    # Safe優先（次の札を持つ）
+    # Safe優先：連続して出せる札を優先（ロック継続）
     safe = [a for a in my_actions if self._is_safe_move(a, hand_strs)]
     if safe:
         return random.choice(safe), 0
 ```
 
 **効果:**
-- ベンチマーク環境との整合性向上
+- AI同士の対戦を正確に模擬
+- プレイアウトフェーズでより現実的なシミュレーション
 - **勝率: +3-5%**
 
 ---

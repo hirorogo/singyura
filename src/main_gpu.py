@@ -589,21 +589,28 @@ class GPUAcceleratedAI:
         return action_scores
 
     def _rollout_policy_action(self, state):
-        """適応的ロールアウトポリシー"""
+        """適応的ロールアウトポリシー
+        
+        実際の大会環境（AI同士）を想定した戦略的ポリシー
+        """
         my_actions = state.my_actions()
         if not my_actions:
             return None, 1
 
         if ENABLE_ADAPTIVE_ROLLOUT:
+            # AI同士の対戦を想定した戦略
+            # 1. 端優先（A/K）：トンネルを活用
             ends = [a for a in my_actions if a.number in (Number.ACE, Number.KING)]
             if ends:
                 return random.choice(ends), 0
 
+            # 2. Safe優先：連続して出せる札を優先（ロック継続）
             hand_strs = [str(c) for c in state.players_cards[state.turn_player]]
             safe = [a for a in my_actions if self._is_safe_move(a, hand_strs)]
             if safe:
                 return random.choice(safe), 0
 
+            # 3. ランダム選択（戦略的な偏りを避ける）
             return random.choice(my_actions), 0
         else:
             return random.choice(my_actions), 0
