@@ -2,7 +2,31 @@
 
 ## 🚀 5分で始める七並べAI
 
-### ステップ1: 大会提出用コードをテスト
+## 📓 **提出用ファイル（Jupyter Notebook形式）**
+
+### ステップ1: Notebook を開く
+
+**Google Colab で開く（推奨）:**
+1. [Open in Colab](https://colab.research.google.com/github/hirorogo/singyura/blob/main/submission.ipynb)
+2. すべてのセルを実行（Runtime > Run all）
+3. ベンチマークで勝率を確認
+
+**ローカルで開く:**
+```bash
+# Jupyter をインストール
+pip install jupyter notebook numpy
+
+# Notebook を開く
+jupyter notebook submission.ipynb
+```
+
+**これだけ！** submission.ipynb が最終提出ファイルです。
+
+---
+
+## 🐍 **Python スクリプト版（開発・テスト用）**
+
+### ステップ1: スクリプトをテスト
 
 ```bash
 # リポジトリのルートディレクトリで
@@ -34,17 +58,32 @@ AI Win Rate: 55/100 (55.0%)  # 55-60%を期待
 
 ### どちらを使うべき？
 
-#### 大会提出 → `submission.py` ⭐⭐⭐
+#### 大会提出 → `submission.ipynb` ⭐⭐⭐
 
+**Jupyter Notebook形式（推奨）:**
+```bash
+jupyter notebook submission.ipynb
+```
+
+または [Google Colab](https://colab.research.google.com/github/hirorogo/singyura/blob/main/submission.ipynb)
+
+**理由:**
+- ✅ 大会フォーマットに準拠（Jupyter Notebook形式）
+- ✅ Colab で簡単に実行可能
+- ✅ Phase 1改善を含む最適化済み
+- ✅ 勝率55-60%（期待値）
+
+#### 開発・テスト → `submission.py` ⭐⭐
+
+**Python スクリプト版:**
 ```bash
 python submission.py
 ```
 
 **理由:**
-- ✅ 大会フォーマットに準拠
-- ✅ Phase 1改善を含む最適化済み
-- ✅ 確実に動作
-- ✅ 勝率55-60%（期待値）
+- ✅ コマンドラインから簡単実行
+- ✅ 自動化・CI/CD に統合しやすい
+- ✅ Notebook と同じコード
 
 #### ローカル開発 → `main_gpu.py` ⭐⭐⭐
 
@@ -69,6 +108,13 @@ python main_gpu.py
 
 ### シミュレーション回数を変更
 
+**Notebook版:**
+```python
+# submission.ipynb の「設定」セル
+SIMULATION_COUNT = 300  # 100～500に調整可能
+```
+
+**スクリプト版:**
 ```python
 # submission.py の先頭（行10付近）
 SIMULATION_COUNT = 300  # 100～500に調整可能
@@ -81,7 +127,7 @@ SIMULATION_COUNT = 300  # 100～500に調整可能
 
 ### Phase 1機能について
 
-`submission.py` では以下の改善が有効になっています：
+`submission.ipynb` および `submission.py` では以下の改善が有効になっています：
 - ✅ PASS除外（合法手があれば必ず打つ）
 - ✅ 重み付け確定化（パス履歴を考慮）
 - ✅ 適応的ロールアウト（戦略的シミュレーション）
@@ -147,9 +193,11 @@ BATCH_SIZE = 50  # 100から減らす
 ## 📚 もっと詳しく知りたい場合
 
 ### 詳細ドキュメント
-- `README_IMPROVED.md` - 詳細な使い方
-- `doc/phase1_improvements.md` - 実装詳細
-- `doc/version_comparison.md` - バージョン比較
+- `README.md` - プロジェクト全体概要
+- `doc/specification.md` - ゲーム仕様
+- `doc/design_strongest.md` - PIMC法の設計
+- `doc/archive/phase1_improvements.md` - 実装詳細（アーカイブ）
+- `doc/archive/ai_status_report.md` - 全体戦略（アーカイブ）
 
 ### コードを理解したい
 1. `src/main_improved.py` - Phase 1改善版（推奨）
@@ -161,14 +209,14 @@ BATCH_SIZE = 50  # 100から減らす
 ## 🎯 次のアクション
 
 ### すぐにやること
-1. ✅ `python main_improved.py` を実行
-2. ✅ `python benchmark_improved.py` で勝率確認
+1. ✅ `submission.ipynb` を Colab または Jupyter で開く
+2. ✅ すべてのセルを実行してベンチマーク確認
 3. ✅ 勝率55%以上なら大会提出OK
 
 ### 余裕があれば
-4. ⭐ GPU版を試す（開発環境）
+4. ⭐ スクリプト版（`submission.py`）でテスト
 5. ⭐ パラメータをチューニング
-6. ⭐ Phase 2の戦略を検討
+6. ⭐ GPU版を試す（開発環境）
 
 ---
 
@@ -205,9 +253,9 @@ BATCH_SIZE = 50  # 100から減らす
 ## 🤝 サポート
 
 ### 問題が解決しない場合
-1. `README_IMPROVED.md` のトラブルシューティングを確認
-2. GitHub Issue を作成
-3. ドキュメントを再確認
+1. `README.md` のトラブルシューティングを確認
+2. `doc/` 配下のドキュメントを確認
+3. GitHub Issue を作成
 
 ---
 
