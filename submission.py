@@ -58,6 +58,8 @@ class Card:
         return f"Card({self.__str__()})"
 
     def __eq__(self, other):
+        if not isinstance(other, Card):
+            return False
         return (self.suit, self.number) == (other.suit, other.number)
 
     def __hash__(self):
