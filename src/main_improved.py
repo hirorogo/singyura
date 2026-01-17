@@ -10,7 +10,7 @@ EP_GAME_COUNT = 1000  # 評価用の対戦回数
 MY_PLAYER_NUM = 0     # 自分のプレイヤー番号
 
 # シミュレーション用設定（Phase 1最適化版）
-SIMULATION_COUNT = 200  # 1手につき何回シミュレーションするか
+SIMULATION_COUNT = 300  # 1手につき何回シミュレーションするか（最適化済み）
 SIMULATION_DEPTH = 200  # どこまで先読みするか
 
 # Phase 1改善フラグ
