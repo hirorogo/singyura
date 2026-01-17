@@ -7,6 +7,21 @@ Singularityバトルクエスト決勝大会「AI 7並べ (XQ)」用の高度な
 このプロジェクトは、トンネルルールを採用した七並べゲームで勝利するためのAIを開発しています。
 PIMC (Perfect Information Monte Carlo) 法を用いた戦略的なAIを実装し、大会での勝利を目指します。
 
+## 🎯 **【重要】提出用ファイル**
+
+**📓 `submission.ipynb`** - Jupyter Notebook形式の提出ファイル（完成版）
+
+このファイルをGoogle Colabまたはローカル環境で実行してください：
+- ✅ Colab対応（そのまま実行可能）
+- ✅ Phase 1改善版AI実装済み
+- ✅ ベンチマークテスト付き
+- ✅ 勝率55-60%（ランダムAI相手）
+
+```bash
+# ローカルで実行する場合
+jupyter notebook submission.ipynb
+```
+
 ### ゲームルール
 - **3人対戦**（足りない枠はランダムAIが埋める）
 - **4スーツ**（♠♣♡♢）のA～Kの52枚を使用
@@ -16,16 +31,23 @@ PIMC (Perfect Information Monte Carlo) 法を用いた戦略的なAIを実装し
 
 ## 🚀 クイックスタート
 
-### 大会提出用ファイル
+### 1. 提出用ファイルを開く
 
-**推奨**: `submission.py` を使用してください。
+**Jupyter Notebook形式（推奨）:**
+```bash
+jupyter notebook submission.ipynb
+```
+
+または Google Colab で開く：
+- [Open in Colab](https://colab.research.google.com/github/hirorogo/singyura/blob/main/submission.ipynb)
+
+### 2. Python スクリプト版（開発・テスト用）
 
 ```bash
 python submission.py
 ```
 
-このファイルは以下の特徴があります：
-- ✅ 大会フォーマットに準拠
+**特徴:**
 - ✅ Phase 1改善を含む最適化済みAI
 - ✅ 標準ライブラリのみ使用（numpy以外不要）
 - ✅ シミュレーション回数300回（最適化済み）
@@ -44,10 +66,10 @@ python benchmark_improved.py
 
 ```
 singyura/
-├── submission.py              # 【重要】大会提出用ファイル ★
+├── submission.ipynb           # 【重要】Jupyter Notebook提出用ファイル ★★★
+├── submission.py              # Python スクリプト版（開発・テスト用）
 ├── README.md                  # このファイル
 ├── QUICKSTART.md              # クイックスタートガイド
-├── SUMMARY_JP.md              # プロジェクトサマリー
 │
 ├── src/                       # 開発用ソースコード
 │   ├── main.py               # オリジナル版AI
@@ -57,7 +79,7 @@ singyura/
 │   ├── benchmark_improved.py # Phase 1版ベンチマーク
 │   └── benchmark_gpu.py      # GPU版ベンチマーク
 │
-├── reference/                 # 参考コード（昨年度/基本実装）
+├── reference/                 # 参考コード（大会提供）
 │   ├── README.md             # 参考コードの説明
 │   ├── base_game_engine.py   # 大会提供の基本ゲームエンジン
 │   └── random_ai.py          # ランダムAI（ベンチマーク用）
@@ -66,16 +88,22 @@ singyura/
     ├── specification.md       # 仕様書・課題説明
     ├── design_strongest.md    # PIMC法の設計書
     ├── strategy.md            # 戦略案
-    ├── ai_status_report.md    # 詳細分析レポート
-    ├── phase1_improvements.md # Phase 1改善レポート
-    ├── phase2_improvements.md # Phase 2改善レポート
-    ├── simulation_count_optimization.md  # 最適化レポート
-    ├── version_comparison.md  # バージョン比較
     ├── logs/                  # 開発ログ
     │   ├── 00_structure_changes.md
     │   └── 01_pimc_implementation_and_tuning.md
-    └── misc/                  # その他資料
-        └── colab_notebook.md  # 大会提供のColabノートブック
+    ├── misc/                  # その他資料
+    │   └── colab_notebook.md  # 大会提供のColabノートブック
+    └── archive/               # アーカイブ（詳細レポート）
+        ├── ai_status_report.md
+        ├── phase1_improvements.md
+        ├── phase2_improvements.md
+        ├── simulation_count_optimization.md
+        ├── version_comparison.md
+        ├── COMPLETION_SUMMARY.md
+        ├── CONTRIBUTING.md
+        ├── README_IMPROVED.md
+        ├── SUBMISSION_GUIDE.md
+        └── SUMMARY_JP.md
 ```
 
 ## 🎯 AI戦略
@@ -152,16 +180,22 @@ pip install torch  # NVIDIA/Apple Silicon
 
 ## 📖 使い方
 
-### 1. 大会提出
+### 1. 大会提出（Jupyter Notebook）
 
 ```bash
-# submission.py をそのまま提出
-python submission.py
+# Jupyter Notebookで開く
+jupyter notebook submission.ipynb
+
+# または Google Colab で実行
+# https://colab.research.google.com/github/hirorogo/singyura/blob/main/submission.ipynb
 ```
 
-### 2. ローカルテスト
+### 2. ローカルテスト（Python スクリプト）
 
 ```bash
+# スクリプト版を実行
+python submission.py
+
 # ベンチマーク実行
 cd src
 python benchmark_improved.py
@@ -199,11 +233,17 @@ ENABLE_ADAPTIVE_ROLLOUT = True          # 適応的ロールアウト
 
 ## 📚 ドキュメント
 
+### 主要ドキュメント
 - **[QUICKSTART.md](QUICKSTART.md)** - 5分でわかるクイックガイド
-- **[SUMMARY_JP.md](SUMMARY_JP.md)** - プロジェクト詳細サマリー
-- **[doc/ai_status_report.md](doc/ai_status_report.md)** - 詳細な分析と改善戦略
-- **[doc/phase1_improvements.md](doc/phase1_improvements.md)** - Phase 1改善の詳細
+- **[doc/specification.md](doc/specification.md)** - ゲーム仕様・ルール説明
+- **[doc/design_strongest.md](doc/design_strongest.md)** - PIMC法の設計書
+- **[doc/strategy.md](doc/strategy.md)** - AI戦略案
 - **[reference/README.md](reference/README.md)** - 参考コードの説明
+
+### 詳細レポート（アーカイブ）
+- **[doc/archive/ai_status_report.md](doc/archive/ai_status_report.md)** - 詳細な分析と改善戦略
+- **[doc/archive/phase1_improvements.md](doc/archive/phase1_improvements.md)** - Phase 1改善の詳細
+- **[doc/archive/SUMMARY_JP.md](doc/archive/SUMMARY_JP.md)** - プロジェクト詳細サマリー
 
 ## 🎓 今後の改善（Phase 2以降）
 
@@ -244,12 +284,13 @@ SIMULATION_COUNT = 100
 
 ## ✅ 大会提出チェックリスト
 
-- [ ] `submission.py` を使用
+- [ ] **`submission.ipynb`** を使用（Jupyter Notebook形式）
+- [ ] Google Colab で動作確認済み
 - [ ] `SIMULATION_COUNT = 300` に設定
 - [ ] デバッグ出力を削除
 - [ ] `my_AI` 関数が正しく実装されている
 - [ ] ベンチマークで勝率55%以上を確認
-- [ ] Colabノートブック形式に準拠
+- [ ] 必要なライブラリ（numpy）のみ使用
 
 ## 📝 ライセンス
 
