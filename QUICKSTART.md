@@ -1,21 +1,22 @@
 # クイックスタートガイド
 
-## 🚀 5分で始める七並べAI Phase 1改善版
+## 🚀 5分で始める七並べAI
 
-### ステップ1: 大会提出用コードを実行
+### ステップ1: 大会提出用コードをテスト
 
 ```bash
-cd src
-python main_improved.py
+# リポジトリのルートディレクトリで
+python submission.py
 ```
 
-**これだけ！** 標準ライブラリのみで動作します。
+**これだけ！** 標準ライブラリ（+ numpy）のみで動作します。
 
 ---
 
 ## 📊 ベンチマークで勝率を確認
 
 ```bash
+# 開発版でベンチマーク
 cd src
 python benchmark_improved.py
 ```
@@ -25,22 +26,25 @@ python benchmark_improved.py
 AI Win Rate: 55/100 (55.0%)  # 55-60%を期待
 ```
 
+**注**: `submission.py` は大会提出用の最終版です。ベンチマークは開発版（src/）で行ってください。
+
 ---
 
 ## 🎮 バージョン選択
 
 ### どちらを使うべき？
 
-#### 大会提出 → `main_improved.py` ⭐⭐⭐
+#### 大会提出 → `submission.py` ⭐⭐⭐
 
 ```bash
-python main_improved.py
+python submission.py
 ```
 
 **理由:**
-- ✅ 標準ライブラリのみ
+- ✅ 大会フォーマットに準拠
+- ✅ Phase 1改善を含む最適化済み
 - ✅ 確実に動作
-- ✅ 勝率55-60%
+- ✅ 勝率55-60%（期待値）
 
 #### ローカル開発 → `main_gpu.py` ⭐⭐⭐
 
@@ -66,8 +70,8 @@ python main_gpu.py
 ### シミュレーション回数を変更
 
 ```python
-# main_improved.py または main_gpu.py の先頭
-SIMULATION_COUNT = 200  # 100～500に調整可能
+# submission.py の先頭（行10付近）
+SIMULATION_COUNT = 300  # 100～500に調整可能
 ```
 
 **目安:**
@@ -75,14 +79,14 @@ SIMULATION_COUNT = 200  # 100～500に調整可能
 - 200: バランス（勝率55-60%）⭐推奨
 - 500: 高精度（勝率60-65%）※遅い
 
-### Phase 1機能の切り替え
+### Phase 1機能について
 
-```python
-# main_improved.py または main_gpu.py の先頭
-ENABLE_PASS_REMOVAL = True  # PASS除外（推奨: True）
-ENABLE_WEIGHTED_DETERMINIZATION = True  # 重み付け確定化（推奨: True）
-ENABLE_ADAPTIVE_ROLLOUT = True  # 適応的ロールアウト（推奨: True）
-```
+`submission.py` では以下の改善が有効になっています：
+- ✅ PASS除外（合法手があれば必ず打つ）
+- ✅ 重み付け確定化（パス履歴を考慮）
+- ✅ 適応的ロールアウト（戦略的シミュレーション）
+
+これらは `src/main_improved.py` で開発・テストされたものです。
 
 ---
 
