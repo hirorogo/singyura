@@ -42,16 +42,16 @@ except ImportError:
         print("[INFO] No GPU library detected - using CPU")
 
 # --- 定数・設定 ---
-EP_GAME_COUNT = 1000
+EP_GAME_COUNT = 100000
 MY_PLAYER_NUM = 0
 
 # GPU対応: シミュレーション回数を動的に調整
 if GPU_AVAILABLE:
-    SIMULATION_COUNT = 1000  # GPUなら10倍
+    SIMULATION_COUNT = 100000  # GPUなら10倍
     BATCH_SIZE = 100  # バッチ処理サイズ
     print(f"[INFO] GPU mode: SIMULATION_COUNT={SIMULATION_COUNT}, BATCH_SIZE={BATCH_SIZE}")
 else:
-    SIMULATION_COUNT = 200  # CPU版と同じ
+    SIMULATION_COUNT = 2000  # CPU版と同じ
     BATCH_SIZE = 1
     print(f"[INFO] CPU mode: SIMULATION_COUNT={SIMULATION_COUNT}")
 
