@@ -608,7 +608,7 @@ class HybridStrongestAI:
                 continue  # 7は初期配置で自動的に出される
             
             # 次のカードを自分が持っているかチェック
-            if next_val >= 1 and next_val <= 13:
+            if 1 <= next_val <= 13:
                 next_card = Card(action.suit, self._index_to_number(next_val - 1))
                 if next_card and next_card in my_hand:
                     safe_moves.append(action)
@@ -891,10 +891,8 @@ class HybridStrongestAI:
                     tracker.mark_out(p)
             else:
                 if a is not None:
-                    try:
-                        replay_state.put_card(a)
-                    except Exception:
-                        pass
+                    # カードを場に置く（エラーは無視 - すでに置かれている場合など）
+                    replay_state.put_card(a)
 
             # 3) 次手番へ（out_player をスキップ）
             original = replay_state.turn_player

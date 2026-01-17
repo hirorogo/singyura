@@ -134,7 +134,6 @@ class HybridStrongestAI:
         new_field_cards = state.field_cards.copy()
         new_pass_count = list(state.pass_count)
         new_out_player = list(state.out_player)
-        new_history = list(getattr(state, 'history', []))
 
         return State(
             players_num=state.players_num,
@@ -168,7 +167,7 @@ class HybridStrongestAI:
             else:
                 continue
 
-            if next_val >= 1 and next_val <= 13:
+            if 1 <= next_val <= 13:
                 next_card = Card(action.suit, self._index_to_number(next_val - 1))
                 if next_card and next_card in my_hand:
                     safe_moves.append(action)
@@ -388,10 +387,8 @@ class HybridStrongestAI:
                     tracker.mark_out(p)
             else:
                 if a is not None:
-                    try:
-                        self._put_card(replay_state, a)
-                    except Exception:
-                        pass
+                    # カードを場に置く（エラーは無視 - すでに置かれている場合など）
+                    self._put_card(replay_state, a)
 
             original = replay_state.turn_player
             for i in range(1, replay_state.players_num + 1):
