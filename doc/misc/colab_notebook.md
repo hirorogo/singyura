@@ -33,7 +33,7 @@
         "colab_type": "text"
       },
       "source": [
-        "<a href=\"https://colab.research.google.com/github/hirorogo/singyura/blob/main/doc/misc/colab_notebook.md\" target=\"_parent\"><img src=\"https://colab.research.google.com/assets/colab-badge.svg\" alt=\"Open In Colab\"/></a>"
+        "<a href=\"https://colab.research.google.com/github/hirorogo/singyura/blob/main/submission.ipynb\" target=\"_parent\"><img src=\"https://colab.research.google.com/assets/colab-badge.svg\" alt=\"Open In Colab\"/></a>"
       ]
     },
     {
@@ -178,6 +178,9 @@
         "# @title Card（カード）クラス\n",
         "class Card:\n",
         "    def __init__(self, suit, number):\n",
+        "        # suitとnumberはEnumであることを保証\n",
+        "        if not (isinstance(suit, Suit) and isinstance(number, Number)):\n",
+        "            raise ValueError('SuitとNumberを指定してください')\n",
         "        self.suit = suit\n",
         "        self.number = number\n",
         "\n",
@@ -193,7 +196,7 @@
         "        return (self.suit, self.number) == (other.suit, other.number)\n",
         "\n",
         "    def __hash__(self):\n",
-        "        return hash((self.suit, self.number))"
+        "        return hash((self.suit, self.number))\n"
       ],
       "execution_count": null,
       "outputs": []
@@ -239,17 +242,16 @@
         "# @title Deck（デッキ）クラス\n",
         "class Deck(list):\n",
         "    def __init__(self):\n",
-        "        from random import shuffle\n",
         "        super().__init__(\n",
         "            Card(suit, number) for suit in Suit for number in Number\n",
         "        )\n",
-        "        shuffle(self)\n",
+        "        random.shuffle(self)\n",
         "\n",
         "    def deal(self, players_num):\n",
-        "        cards = [Hand(i) for i in np.array_split(self, players_num)]\n",
-        "        cards = [Hand(list(c)) for c in cards]\n",
+        "        # np.array_splitがnumpy配列を返すため明示的にリスト化\n",
+        "        cards = [Hand(list(card_group)) for card_group in np.array_split(self, players_num)]\n",
         "        self.clear()\n",
-        "        return cards"
+        "        return cards\n"
       ],
       "execution_count": null,
       "outputs": []
@@ -559,6 +561,8 @@
         "    - 適応的ロールアウトポリシー\n",
         "    \"\"\"\n",
         "    \n",
+        "    # 確定化リトライの上限回数\n",
+        "    DETERMINIZE_RETRY = 30\n",
         "    def __init__(self, my_player_num, simulation_count=300):\n",
         "        self.my_player_num = my_player_num\n",
         "        self.simulation_count = simulation_count\n",
@@ -698,8 +702,9 @@
         "\n",
         "        need = {p: len(original_state.players_cards[p]) for p in range(base.players_num) if p != self.my_player_num}\n",
         "\n",
-        "        # 30回リトライ\n",
-        "        for _ in range(30):\n",
+        "        # 確定化を複数回リトライ（値は DETERMINIZE_RETRY で管理）\n",
+        "        # 制約を満たす割り当てを試行（過去の検証でこの回数で十分収束）\n",
+        "        for _ in range(self.DETERMINIZE_RETRY):\n",
         "            random.shuffle(pool)\n",
         "            remain = list(pool)\n",
         "            hands = {p: [] for p in need.keys()}\n",
