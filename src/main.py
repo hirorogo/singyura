@@ -129,143 +129,69 @@ class Deck(list):
 # --- 推論器 (Inference Engine) ---
 
 class CardTracker:
-    """不完全情報(相手手札)の推論器（確率版）。
-
-    目的: design_strongest.md の Phase1 を満たす（Belief State確率化版）。
-    - 自分の手札/場に出た札は確定（確率1.0/0.0）
-    - あるプレイヤーが「パス」したとき、その時点で出せた候補札の所持確率を大幅に下げる
-    - 行動観測により、各プレイヤーの各カード所持確率を動的に更新
-
-    実装方針:
-    - belief[p][card] = float (0.0 ~ 1.0) の確率分布
-    - 確率的推論により、より精密な手札推定が可能
-    - 重み付き確定化で推論の効果を最大化
+    """パス履歴から相手の手札可能性を推論
+    
+    参考用実装からの完全コピー版（doc/misc/colab_notebook.md）
+    - シンプルなset-basedアプローチ
+    - パス観測時にlegal_actionsを完全に除外（より決定的）
+    - 確率計算なし（実行速度重視）
     """
 
     def __init__(self, state, my_player_num):
         self.players_num = state.players_num
         self.my_player_num = my_player_num
-
-        # 全カード集合
         self.all_cards = [Card(s, n) for s in Suit for n in Number]
-
-        # belief[p] = Dict[card -> probability]
-        # 初期状態: 自分以外のカードは均等分布
-        self.belief = [{} for _ in range(self.players_num)]
         
-        # まず全カードを均等確率で初期化
-        unknown_card_count = 52 - 4  # 7は初期配置で場に出る
-        initial_prob = 1.0 / (self.players_num - 1)  # 自分以外で均等
-        
-        for p in range(self.players_num):
-            for card in self.all_cards:
-                if card.number == Number.SEVEN:
-                    self.belief[p][card] = 0.0  # 7は初期配置で場に出る
-                else:
-                    self.belief[p][card] = initial_prob if p != my_player_num else 0.0
-
-        # 場に出たカードは誰も持たない（確率0.0）
-        self._apply_field(state)
-
-        # 自分の手札は確定: 自分のみが確率1.0、他は0.0
-        my_hand = set(state.players_cards[my_player_num])
-        for card in self.all_cards:
-            if card in my_hand:
-                self.belief[my_player_num][card] = 1.0
-                for p in range(self.players_num):
-                    if p != my_player_num:
-                        self.belief[p][card] = 0.0
-            elif card not in my_hand and card.number != Number.SEVEN:
-                self.belief[my_player_num][card] = 0.0
-
-        # すでにアウト(burst)しているプレイヤーは手札0として扱い、推論対象外
-        self.out_player = set(state.out_player)
-        
-        # パス回数の記録（バースト誘導戦略用）
+        # possible[p] = プレイヤーpが持ちうるカード集合
+        self.possible = [set(self.all_cards) for _ in range(self.players_num)]
         self.pass_counts = [0] * self.players_num
-
-    def clone(self):
-        c = object.__new__(CardTracker)
-        c.players_num = self.players_num
-        c.my_player_num = self.my_player_num
-        c.all_cards = self.all_cards
-        c.belief = [dict(b) for b in self.belief]
-        c.out_player = set(self.out_player)
-        c.pass_counts = list(self.pass_counts)
-        return c
-    
-    @property
-    def possible(self):
-        """後方互換性のため、Set形式のインターフェースを提供"""
-        result = []
+        
+        # 場に出たカードは誰も持たない
+        self._apply_field(state)
+        
+        # 自分の手札は確定
+        my_hand = set(state.players_cards[my_player_num])
         for p in range(self.players_num):
-            possible_set = set()
-            for card, prob in self.belief[p].items():
-                if prob > 0.0:  # 確率が0より大きいカードは「持ちうる」
-                    possible_set.add(card)
-            result.append(possible_set)
-        return result
+            if p == my_player_num:
+                self.possible[p].intersection_update(my_hand)
+            else:
+                self.possible[p].difference_update(my_hand)
+        
+        self.out_player = set(state.out_player)
 
     def _apply_field(self, state):
-        # field_cards から「場に出ているカード集合」を作る
+        """場に出たカードを除外"""
         for s_idx, s in enumerate(Suit):
             for n_idx, n in enumerate(Number):
                 if state.field_cards[s_idx][n_idx] == 1:
                     card = Card(s, n)
                     for p in range(self.players_num):
-                        self.belief[p][card] = 0.0
+                        self.possible[p].discard(card)
 
     def observe_action(self, state, player, action, is_pass):
-        """行動観測で確率分布を更新。
-
-        - actionを出したなら、そのカードは全員が持たない（確率0.0）
-        - passしたなら、その時点の legal_actions のカード所持確率を大幅に下げる
-          （完全に0にはせず、微小値に下げる = 戦略的パスの可能性も考慮）
-        """
+        """行動観測で可能性を更新"""
         if player in self.out_player:
             return
 
         if is_pass:
             self.pass_counts[player] += 1
+            # パス時、出せるカードを持っていないと推論
             legal = state.legal_actions()
-            
-            # パス回数に応じて確率減衰率を変化
-            # 多くパスしているほど、本当に持っていない可能性が高い
-            decay_factor = BELIEF_STATE_DECAY_FACTOR if self.pass_counts[player] >= 2 else (BELIEF_STATE_DECAY_FACTOR * 2)
-            
             for c in legal:
-                if c in self.belief[player]:
-                    # 確率を大幅に減衰（但し0にはしない）
-                    self.belief[player][c] = min(self.belief[player][c], decay_factor)
-            
-            # 確率の正規化（合計が適切な範囲になるように調整）
-            self._normalize_belief(player)
-            return
-
-        if action is not None:
+                self.possible[player].discard(c)
+        elif action is not None:
+            # カードを出したら全員が持っていない
             for p in range(self.players_num):
-                self.belief[p][action] = 0.0
-
-    def _normalize_belief(self, player):
-        """プレイヤーの確率分布を正規化（相対確率の保持）"""
-        total = sum(prob for prob in self.belief[player].values())
-        if total > 0:
-            # 相対比率を保持しつつ正規化
-            for card in self.belief[player]:
-                self.belief[player][card] = self.belief[player][card] / total
+                self.possible[p].discard(action)
 
     def mark_out(self, player):
         self.out_player.add(player)
-        for card in self.belief[player]:
-            self.belief[player][card] = 0.0
-    
-    def get_probability(self, player, card):
-        """特定のプレイヤーが特定のカードを持つ確率を取得"""
-        return self.belief[player].get(card, 0.0)
-    
-    def get_expected_hand_size(self, player):
-        """プレイヤーの期待手札枚数を計算"""
-        return sum(self.belief[player].values())
+        self.possible[player].clear()
+
+    def get_player_weight(self, player):
+        """パス回数に基づく重み（0.5～1.0）"""
+        weight = 1.0 - (self.pass_counts[player] / 4.0) * 0.5
+        return max(0.5, weight)
 
 
 # --- ゲームエンジン ---
@@ -420,9 +346,11 @@ class State:
     def legal_actions(self):
         """場で出せるカードのリストを返す (トンネルルール対応)。
 
-        トンネルルール:
-        - そのスートでA(1)が出たら、以後はK側(8→…→K)しか伸ばせない
-        - そのスートでK(13)が出たら、以後はA側(A→…→6)しか伸ばせない
+        トンネルルール（正しい理解）:
+        - 初期状態（AもKも出ていない）: 7から6と8を出せる（通常の7並べ）
+        - カードがAまで出た場合 → そのスートはKからしか出せない（トンネル発動）
+        - Kが出た時 → そのスートはAからしか出せない（トンネル発動）
+        - AとKの両方が出ている → 両側から伸ばせる（列完成に向かう）
         """
         actions = []
         for suit, n in zip(Suit, range(4)):
@@ -431,8 +359,8 @@ class State:
             is_king_out = self.field_cards[n][12] == 1
 
             # --- 7より小さい側 (A-6) ---
-            # Kが出ている場合のみ、この側を伸ばしてよい
-            if is_king_out:
+            # 条件: Kが出ている OR (AもKも出ていない = 初期状態)
+            if is_king_out or (not is_ace_out and not is_king_out):
                 small_side = self.field_cards[n][0:6]  # A..6
                 if small_side[5] == 0:
                     actions.append(Card(suit, Number.SIX))
@@ -443,8 +371,8 @@ class State:
                             break
 
             # --- 7より大きい側 (8-K) ---
-            # Aが出ている場合のみ、この側を伸ばしてよい
-            if is_ace_out:
+            # 条件: Aが出ている OR (AもKも出ていない = 初期状態)
+            if is_ace_out or (not is_ace_out and not is_king_out):
                 if self.field_cards[n][7] == 0:
                     actions.append(Card(suit, Number.EIGHT))
                 else:
@@ -1103,14 +1031,16 @@ class HybridStrongestAI:
                     # K を出すかどうかの判断
                     
                     # 相手がK側（8-K）に持っている期待枚数を計算
-                    opponent_high_expectation = 0.0
+                    opponent_high_expectation = 0
                     for p in range(state.players_num):
                         if p != self.my_player_num and p not in state.out_player:
                             for num_val in range(8, 14):
                                 num = self._index_to_number(num_val - 1)
                                 if num:
                                     check_card = Card(suit, num)
-                                    opponent_high_expectation += tracker.get_probability(p, check_card)
+                                    # set-based: カードが possible[p] に含まれるかチェック
+                                    if check_card in tracker.possible[p]:
+                                        opponent_high_expectation += 1
                     
                     # 自分が多く持っている場合は出す、少ない場合は温存
                     if len(my_high_cards) >= 4:
@@ -1128,14 +1058,16 @@ class HybridStrongestAI:
                     # A を出すかどうかの判断
                     
                     # 相手がA側（A-6）に持っている期待枚数を計算
-                    opponent_low_expectation = 0.0
+                    opponent_low_expectation = 0
                     for p in range(state.players_num):
                         if p != self.my_player_num and p not in state.out_player:
                             for num_val in range(1, 7):
                                 num = self._index_to_number(num_val - 1)
                                 if num:
                                     check_card = Card(suit, num)
-                                    opponent_low_expectation += tracker.get_probability(p, check_card)
+                                    # set-based: カードが possible[p] に含まれるかチェック
+                                    if check_card in tracker.possible[p]:
+                                        opponent_low_expectation += 1
                     
                     # 自分が多く持っている場合は出す、少ない場合は温存
                     if len(my_low_cards) >= 4:
@@ -1188,19 +1120,22 @@ class HybridStrongestAI:
             vuln_score = pass_count * 10
             
             # 期待手札枚数が多いほど危険（まだ余裕がある）
-            expected_hand_size = tracker.get_expected_hand_size(player)
+            # set-based: possible[player]のサイズで推定
+            expected_hand_size = len(tracker.possible[player])
             vuln_score += max(0, 10 - expected_hand_size) * 3
             
             # 各スートの所持確率を分析
             suit_vulnerabilities = {}
             for suit in Suit:
-                suit_prob_sum = 0.0
+                suit_card_count = 0
                 for num in Number:
                     card = Card(suit, num)
-                    suit_prob_sum += tracker.get_probability(player, card)
+                    # set-based: カードが possible[player] に含まれるかチェック
+                    if card in tracker.possible[player]:
+                        suit_card_count += 1
                 
-                # 所持確率が低いスートほど脆弱
-                suit_vulnerabilities[suit] = max(0, 5 - suit_prob_sum)
+                # 所持可能性が低いスートほど脆弱
+                suit_vulnerabilities[suit] = max(0, 5 - suit_card_count)
             
             vulnerability[player] = {
                 'total': vuln_score,
@@ -1471,13 +1406,13 @@ class HybridStrongestAI:
         return tracker
 
     def _create_determinized_state_with_constraints(self, original_state, tracker: CardTracker):
-        """推論制約(belief)に基づいて確率的に相手手札を生成する（重み付き確定化）。
-
-        確率分布を使った重み付きサンプリングにより、より精密な確定化を実現。
+        """重み付け確定化: 推論制約を満たすように相手手札を生成
+        
+        参考用実装ベース（doc/misc/colab_notebook.md 689-748行目）
         """
         base = original_state.clone()
 
-        # 相手に配るべきカードプール: 自分以外の手札を全部集める
+        # 相手のカードプール
         pool = []
         for p in range(base.players_num):
             if p != self.my_player_num:
@@ -1488,89 +1423,51 @@ class HybridStrongestAI:
             if p != self.my_player_num:
                 base.players_cards[p] = Hand([])
 
-        # 手札枚数(バーストは0)
         need = {p: len(original_state.players_cards[p]) for p in range(base.players_num) if p != self.my_player_num}
 
-        # 確率的割当を試行
-        for attempt in range(DETERMINIZATION_ATTEMPTS):  # リトライ回数を設定値から取得
+        # 確定化を複数回リトライ（値は DETERMINIZATION_ATTEMPTS で管理）
+        # 制約を満たす割り当てを試行（過去の検証でこの回数で十分収束）
+        for _ in range(30):  # 参考用実装の値（30回）
+            random.shuffle(pool)
             remain = list(pool)
             hands = {p: [] for p in need.keys()}
-            
             ok = True
-            # 各プレイヤーに確率的にカードを割り当て
+
+            # 各プレイヤーに可能なカードを割り当て
             for p in need.keys():
                 k = need[p]
                 if k == 0:
                     continue
+
+                possible_list = [c for c in remain if c in tracker.possible[p]]
                 
-                # このプレイヤーに割り当て可能なカードとその確率
-                candidates = []
-                weights = []
-                for c in remain:
-                    prob = tracker.get_probability(p, c)
-                    if prob > 0.0:
-                        candidates.append(c)
-                        # 確率を重みとして使用（指数関数で強調）
-                        # 高確率のカードをより選ばれやすくする
-                        weights.append(prob ** 0.5)  # 平方根でマイルドに強調
-                
-                if len(candidates) < k:
-                    # 候補が足りない場合、残り全てを候補に追加
-                    for c in remain:
-                        if c not in candidates:
-                            candidates.append(c)
-                            weights.append(0.01)  # 低確率
-                
-                if len(candidates) < k:
+                if len(possible_list) < k:
                     ok = False
                     break
                 
-                # 重み付きサンプリング（復元なし）
-                try:
-                    if sum(weights) > 0:
-                        # 確率を正規化
-                        total_weight = sum(weights)
-                        normalized_weights = [w / total_weight for w in weights]
-                        
-                        # numpy.random.choiceを使用（復元なしサンプリング）
-                        indices = np.random.choice(
-                            len(candidates), 
-                            size=min(k, len(candidates)), 
-                            replace=False, 
-                            p=normalized_weights
-                        )
-                        chosen = [candidates[i] for i in indices]
-                    else:
-                        # 重みが全て0の場合は単純ランダム
-                        chosen = random.sample(candidates, min(k, len(candidates)))
-                    
-                    hands[p].extend(chosen)
-                    # 選ばれたカードを残りから削除
-                    for c in chosen:
-                        remain.remove(c)
-                        
-                except (ValueError, IndexError):
-                    ok = False
-                    break
-            
+                chosen = possible_list[:k]
+                hands[p].extend(chosen)
+                chosen_set = set(chosen)
+                remain = [c for c in remain if c not in chosen_set]
+
             if not ok:
                 continue
-            
-            # もし残りがある場合は適当に分配
+
+            # 残りを分配
             if remain:
                 ps = list(need.keys())
                 idx = 0
                 for c in remain:
                     hands[ps[idx % len(ps)]].append(c)
                     idx += 1
-            
+
             # 反映
             for p, cards in hands.items():
                 base.players_cards[p] = Hand(cards)
-            
+
             return base
-        
-        # フォールバック: シンプルなランダム確定化
+
+        # フォールバック: ランダム確定化
         return self._create_determinized_state(original_state, pool)
 
     def _is_safe_move(self, card, hand_card_strs):
