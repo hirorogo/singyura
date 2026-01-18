@@ -346,13 +346,11 @@ class State:
     def legal_actions(self):
         """場で出せるカードのリストを返す (トンネルルール対応)。
 
-        トンネルルール:
-        - そのスートでA(1)が出たら、以後はK側(8→…→K)しか伸ばせない
-        - そのスートでK(13)が出たら、以後はA側(A→…→6)しか伸ばせない
-        
-        つまり:
-        - Aが**出ていない**場合は8-K側を通常通り伸ばせる
-        - Kが**出ていない**場合はA-6側を通常通り伸ばせる
+        トンネルルール（正しい理解）:
+        - 初期状態（AもKも出ていない）: 7から6と8を出せる（通常の7並べ）
+        - カードがAまで出た場合 → そのスートはKからしか出せない（トンネル発動）
+        - Kが出た時 → そのスートはAからしか出せない（トンネル発動）
+        - AとKの両方が出ている → 両側から伸ばせる（列完成に向かう）
         """
         actions = []
         for suit, n in zip(Suit, range(4)):
@@ -361,8 +359,8 @@ class State:
             is_king_out = self.field_cards[n][12] == 1
 
             # --- 7より小さい側 (A-6) ---
-            # Kが**出ていない**場合、この側を通常通り伸ばせる
-            if not is_king_out:
+            # 条件: Kが出ている OR (AもKも出ていない = 初期状態)
+            if is_king_out or (not is_ace_out and not is_king_out):
                 small_side = self.field_cards[n][0:6]  # A..6
                 if small_side[5] == 0:
                     actions.append(Card(suit, Number.SIX))
@@ -373,8 +371,8 @@ class State:
                             break
 
             # --- 7より大きい側 (8-K) ---
-            # Aが**出ていない**場合、この側を通常通り伸ばせる
-            if not is_ace_out:
+            # 条件: Aが出ている OR (AもKも出ていない = 初期状態)
+            if is_ace_out or (not is_ace_out and not is_king_out):
                 if self.field_cards[n][7] == 0:
                     actions.append(Card(suit, Number.EIGHT))
                 else:
