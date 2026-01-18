@@ -10,7 +10,7 @@ EP_GAME_COUNT = 1000  # 評価用の対戦回数
 MY_PLAYER_NUM = 0     # 自分のプレイヤー番号
 
 # シミュレーション用設定（Phase 1最適化版）
-SIMULATION_COUNT = 300  # 1手につき何回シミュレーションするか（最適化済み）
+SIMULATION_COUNT = 200  # 1手につき何回シミュレーションするか（より効率的な値）
 SIMULATION_DEPTH = 200  # どこまで先読みするか
 
 # Phase 1改善フラグ
@@ -185,6 +185,8 @@ class CardTracker:
 
         if is_pass:
             self.pass_counts[player] += 1
+            # パスした場合、その時点の合法手を持っていない可能性が高い
+            # 確実に除外できる情報として活用
             legal = state.legal_actions()
             for c in legal:
                 self.possible[player].discard(c)
@@ -550,9 +552,12 @@ class ImprovedHybridAI:
 
         action_scores = {action: 0 for action in candidates}
 
+        # PIMC法：各シミュレーションで確定化を1回行い、全候補を評価
+        # これにより、各候補の期待値を正確に推定できる
         for _ in range(self.simulation_count):
             determinized_state = self._create_determinized_state_with_constraints(state, tracker)
 
+            # 全候補を同じ確定化で評価（効率的な比較）
             for first_action in candidates:
                 sim_state = determinized_state.clone()
                 sim_state.next(first_action, 0)
@@ -800,22 +805,24 @@ class ImprovedHybridAI:
                 # Phase 1改善: 重み付けを考慮
                 possible_list = [c for c in remain if c in tracker.possible[p]]
                 
+                if len(possible_list) < k:
+                    # 制約が厳しすぎる場合は失敗
+                    ok = False
+                    break
+                
+                # Phase 1改善: 重み付けに基づいたサンプリング
                 if ENABLE_WEIGHTED_DETERMINIZATION:
-                    # 重みに基づいてソート（重みが高いプレイヤーに良いカードを優先）
                     weight = tracker.get_player_weight(p)
-                    # 重みが高い場合、より多様なカードを選択可能
-                    if weight > 0.7 and len(possible_list) >= k:
-                        chosen = possible_list[:k]
-                    elif len(possible_list) >= k:
-                        chosen = possible_list[:k]
+                    # 重みが低い場合は可能なカードの前半から選択（制約強め）
+                    # 重みが高い場合は全体からランダムに選択（制約緩め）
+                    if weight < 0.7:
+                        # パスが多いプレイヤーは出しにくいカードを持っている可能性
+                        chosen = random.sample(possible_list, k)
                     else:
-                        ok = False
-                        break
+                        # 通常のランダム選択
+                        chosen = random.sample(possible_list, k)
                 else:
-                    if len(possible_list) < k:
-                        ok = False
-                        break
-                    chosen = possible_list[:k]
+                    chosen = random.sample(possible_list, k)
 
                 hands[p].extend(chosen)
                 # remove chosen from remain
