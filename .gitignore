@@ -53,3 +53,6 @@ src/extended_*.py
 src/final_*.py
 src/verify_*.py
 src/validation_*.py
+
+# External repositories
+coding-agent/
