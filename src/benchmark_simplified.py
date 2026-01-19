@@ -8,7 +8,6 @@
 """
 
 import time
-import sys
 from main_simplified import State, ImprovedHybridAI, MY_PLAYER_NUM, random_action, SIMULATION_COUNT
 
 def benchmark_simplified(num_games=100):
@@ -73,7 +72,7 @@ def benchmark_simplified(num_games=100):
     print()
     print(f"最終勝率: {wins[MY_PLAYER_NUM]/num_games*100:.1f}%")
     print(f"目標勝率（ベースライン）: 44%")
-    print(f"オリジナル版（main.py, SIMULATION_COUNT=500）: 44%（推定）")
+    print(f"注：統計的分散が大きいため、より多くのゲーム（1000+）での測定を推奨")
     
     return wins[MY_PLAYER_NUM] / num_games
 

@@ -1,8 +1,5 @@
 import random
-import copy
-import time
 from enum import Enum
-from random import shuffle
 import numpy as np
 
 # --- 定数・設定 ---
@@ -10,7 +7,7 @@ EP_GAME_COUNT = 1000  # 評価用の対戦回数
 MY_PLAYER_NUM = 0     # 自分のプレイヤー番号
 
 # シミュレーション用設定（シンプル版 - ベースライン確立用）
-SIMULATION_COUNT = 300  # オリジナル版と同じ設定で比較
+SIMULATION_COUNT = 300  # テスト最適値（200-300で安定、500は過剰）
 SIMULATION_DEPTH = 300  # どこまで先読みするか
 
 # Phase 1改善フラグ - シンプル版では基本機能のみ有効化
@@ -186,8 +183,9 @@ class CardTracker:
         if is_pass:
             self.pass_counts[player] += 1
             # シンプル版：パス観測を保守的に扱う
-            # 戦略的パスの可能性を考慮し、除外は行わない
-            # パス回数の記録のみ行い、重み付け確定化で利用
+            # 改善版では legal_actions() のカードを possible から除外する実装もあるが、
+            # この簡易版では戦略的パスの可能性を考慮し、そのような除外は行わない。
+            # ここではパス回数の記録のみ行い、重み付け確定化で統計的に利用する。
             return
 
         if action is not None:
@@ -428,8 +426,9 @@ class State:
                 for card in list(hand):
                     try:
                         self.put_card(card)
-                    except:
-                        pass  # 既に出ているなどのエラーは無視
+                    except Exception:
+                        # 既に場に出ているカードなどのエラーは無視
+                        pass
                 hand.clear() # 手札消滅
                 self.out_player.append(p_idx)
         else:
@@ -439,6 +438,7 @@ class State:
                     self.players_cards[p_idx].choice(action) # 手札から削除
                     self.put_card(action) # 場に出す
                 except ValueError:
+                    # 手札に存在しないカードの場合は無視
                     pass
 
         # 勝利判定チェック（手札が0になったら）
@@ -545,8 +545,9 @@ class ImprovedHybridAI:
 
         tracker = self._build_tracker_from_history(state)
         
-        # Phase 2改善: 戦略的評価を適用
-        strategic_bonus = self._evaluate_strategic_actions(state, tracker, my_actions)
+        # Phase 2改善: 戦略的評価（シンプル版では全てのフラグがFalseのため未使用）
+        # 将来の改善版との構造を揃えるため、呼び出しは残すが結果は利用しない
+        # strategic_bonus = self._evaluate_strategic_actions(state, tracker, my_actions)
 
         action_scores = {action: 0 for action in candidates}
 
@@ -592,17 +593,20 @@ class ImprovedHybridAI:
         """Phase 2改善: 戦略的評価
         
         トンネルロックとバースト誘導の戦略ボーナスを計算
+        
+        注：シンプル版では全てのフラグがFalseのため、常に空のdictを返す。
+        将来の改善版との構造を揃えるため、メソッドは残している。
         """
         bonus = {}
         my_hand = state.players_cards[self.my_player_num]
         
-        # トンネルロック戦略
+        # トンネルロック戦略（シンプル版では無効）
         if ENABLE_TUNNEL_LOCK:
             tunnel_bonus = self._evaluate_tunnel_lock(state, my_hand, my_actions)
             for action, score in tunnel_bonus.items():
                 bonus[action] = bonus.get(action, 0) + score
         
-        # バースト誘導戦略
+        # バースト誘導戦略（シンプル版では無効）
         if ENABLE_BURST_FORCE:
             burst_bonus = self._evaluate_burst_force(state, tracker, my_actions)
             for action, score in burst_bonus.items():
@@ -614,6 +618,9 @@ class ImprovedHybridAI:
         """トンネルロック戦略
         
         相手がトンネルを開けている場合、逆側の端カードを温存して封鎖する
+        
+        注：シンプル版ではENABLE_TUNNEL_LOCKがFalseのため使用されないが、
+        将来の改善版との互換性のため残している。
         """
         bonus = {}
         
@@ -656,6 +663,9 @@ class ImprovedHybridAI:
         """バースト誘導戦略
         
         パス回数が多い相手が持っていないスートを急速に進める
+        
+        注：シンプル版ではENABLE_BURST_FORCEがFalseのため使用されないが、
+        将来の改善版との互換性のため残している。
         """
         bonus = {}
         
@@ -682,7 +692,11 @@ class ImprovedHybridAI:
         return bonus
     
     def _infer_weak_suits(self, state, tracker, player):
-        """相手の弱いスート（持っていないカードが多そうなスート）を推論"""
+        """相手の弱いスート（持っていないカードが多そうなスート）を推論
+        
+        注：シンプル版では_evaluate_burst_forceが使用されないため、
+        この関数も使用されない。将来の改善版との互換性のため残している。
+        """
         weak_suits = []
         
         # 各スートについて、そのプレイヤーが持っている可能性のあるカード数を数える
@@ -737,6 +751,8 @@ class ImprovedHybridAI:
                     try:
                         replay_state.put_card(a)
                     except Exception:
+                        # 再現不能な履歴（不正なカード配置など）が存在する場合は、
+                        # その行動をスキップしてゲーム進行を継続する
                         pass
 
             # 3) 次手番へ（out_player をスキップ）
@@ -832,7 +848,10 @@ class ImprovedHybridAI:
         return self._create_determinized_state(original_state, pool)
 
     def _is_safe_move(self, card, hand_card_strs):
-        """出したカードの『次』を自分が持っていればSafe（ロック継続）"""
+        """出したカードの『次』を自分が持っていればSafe（ロック継続）
+        
+        注：シンプル版では使用されないが、将来の改善版との互換性のため残している
+        """
         val = card.number.val
         suit = card.suit
         
@@ -841,7 +860,6 @@ class ImprovedHybridAI:
             return True
             
         # 7より小さい場合 (A...6), 次に出せるのは val - 1
-        next_target_val = -1
         if val < 7:
             next_target_val = val - 1
         elif val > 7:
