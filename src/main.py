@@ -11,7 +11,7 @@ MY_PLAYER_NUM = 0     # 自分のプレイヤー番号
 
 # シミュレーション用設定
 # 大会モード: 処理時間を気にせず最強を目指す（実証済み最適値）
-SIMULATION_COUNT = 500  # 1手につき何回シミュレーションするか（ベンチマーク実証: 44%勝率）
+SIMULATION_COUNT = 600  # 1手につき何回シミュレーションするか（最適化版: バランス重視）
 SIMULATION_DEPTH = 300  # どこまで先読みするか
 
 # Phase 2改善フラグ
@@ -20,10 +20,10 @@ ENABLE_BURST_FORCE = True  # バースト誘導戦略
 
 # 確率的推論の設定
 BELIEF_STATE_DECAY_FACTOR = 0.05  # パス観測時の確率減衰率（実証済み）
-DETERMINIZATION_ATTEMPTS = 100  # 確定化のリトライ回数（実証済み）
+DETERMINIZATION_ATTEMPTS = 50  # 確定化のリトライ回数（最適化: 処理時間削減）
 
 # 戦略重み付け係数
-STRATEGY_WEIGHT_MULTIPLIER = 0.5  # 戦略ボーナスの影響度（実証済み）
+STRATEGY_WEIGHT_MULTIPLIER = 0.6  # 戦略ボーナスの影響度（強化版）
 TUNNEL_LOCK_WEIGHT = 2.5  # トンネルロック戦略の重み
 BURST_FORCE_WEIGHT = 2.5  # バースト誘導戦略の重み
 
@@ -695,18 +695,27 @@ class HybridStrongestAI:
         # Phase 2改善: 戦略的評価を適用
         strategic_bonus = self._evaluate_strategic_actions(state, tracker, my_actions)
 
-        action_scores = {action: 0 for action in candidates}
+        action_scores = {action: 0.0 for action in candidates}
+        action_visits = {action: 0 for action in candidates}
 
         # 動的シミュレーション回数: 候補が少ない場合はより深く探索
         actual_sim_count = self.simulation_count
         if len(candidates) <= 2:
-            actual_sim_count = int(self.simulation_count * 2.0)  # 2倍に増強
+            actual_sim_count = int(self.simulation_count * 2.5)  # さらに強化
         elif len(candidates) <= 3:
-            actual_sim_count = int(self.simulation_count * 1.5)
+            actual_sim_count = int(self.simulation_count * 1.8)
         elif len(candidates) <= 5:
+            actual_sim_count = int(self.simulation_count * 1.4)
+        elif len(candidates) <= 7:
             actual_sim_count = int(self.simulation_count * 1.2)
 
-        for _ in range(actual_sim_count):
+        # バッチ最適化: 確定化を効率的に行う
+        # 複数アクションで同じ確定化を使い回す
+        batch_size = len(candidates)
+        determinized_states = []
+        
+        for sim_round in range(actual_sim_count):
+            # 確定化を作成（1回のみ）
             determinized_state = self._create_determinized_state_with_constraints(state, tracker)
 
             for first_action in candidates:
@@ -718,32 +727,53 @@ class HybridStrongestAI:
                     sim_state.next(first_action, 0)
 
                 winner = self._playout(sim_state)
+                action_visits[first_action] += 1
 
-                # より詳細なスコアリング
+                # より詳細なスコアリング（改善版）
                 if winner == self.my_player_num:
-                    action_scores[first_action] += 2  # 勝利は+2点
-                elif winner == -1:
-                    # 引き分け（全員バースト）は0点
-                    pass
-                else:
-                    action_scores[first_action] -= 1  # 負けは-1点
+                    # 勝利: より大きな報酬
+                    reward = 3.0
                     
-                    # 手札枚数による追加評価（終了時点での手札が少ないほど良い）
+                    # 早期勝利にボーナス（残った手札数に反比例）
+                    my_remaining = len(sim_state.players_cards[self.my_player_num])
+                    if my_remaining == 0:
+                        reward += 2.0  # 完全勝利
+                    
+                    action_scores[first_action] += reward
+                    
+                elif winner == -1:
+                    # 引き分け（全員バースト）は小さな負のスコア
+                    action_scores[first_action] -= 0.5
+                else:
+                    # 負け: 手札枚数で細かく評価
                     my_remaining = len(sim_state.players_cards[self.my_player_num])
                     winner_remaining = len(sim_state.players_cards[winner])
                     
-                    # 手札差に応じた細かいスコア調整
-                    if my_remaining < winner_remaining:
-                        action_scores[first_action] += 0.3  # 惜しい負けは少しプラス
-                    elif my_remaining - winner_remaining >= 3:
-                        action_scores[first_action] -= 0.3  # 大差の負けは少しマイナス
+                    # 基本ペナルティ
+                    penalty = -1.5
+                    
+                    # 手札差に応じた調整（より細かく）
+                    hand_diff = my_remaining - winner_remaining
+                    if hand_diff <= 0:
+                        # 相手より少ない手札で負けた（惜しい）
+                        penalty += 0.5
+                    elif hand_diff >= 5:
+                        # 大差で負けた
+                        penalty -= 0.5
+                    elif hand_diff >= 3:
+                        # そこそこの差で負けた
+                        penalty -= 0.2
+                    
+                    action_scores[first_action] += penalty
         
         # Phase 2改善: 戦略ボーナスを加算（重要度を高める）
         for action in candidates:
             if action in strategic_bonus:
-                # 戦略ボーナスの影響を調整
-                action_scores[action] += strategic_bonus[action] * STRATEGY_WEIGHT_MULTIPLIER
-
+                # 戦略ボーナスの影響を調整（シミュレーション結果とバランス）
+                bonus_weight = STRATEGY_WEIGHT_MULTIPLIER * (1.0 + actual_sim_count / self.simulation_count / 10.0)
+                action_scores[action] += strategic_bonus[action] * bonus_weight
+        
+        # 最高スコアのアクションを選択
         best_action = max(action_scores, key=action_scores.get)
 
         if best_action is None:
@@ -754,18 +784,47 @@ class HybridStrongestAI:
         """プレイアウト用の軽量ポリシー（再帰禁止）。
         
         参考用コードの戦略を取り入れた改善版。
+        より高度なヒューリスティック評価を使用。
         """
         my_actions = state.my_actions()
         if not my_actions:
             return None, 1
 
-        # 1. A/K（端カード）を優先的に出す
-        ends = [a for a in my_actions if a.number in (Number.ACE, Number.KING)]
-        if ends:
-            return random.choice(ends), 0
-
-        # 2. 連続カード（ラン）の起点を優先
         my_hand = state.players_cards[state.turn_player]
+        
+        # 終盤判定（手札が少ない）
+        if len(my_hand) <= 4:
+            # 終盤は連鎖を最優先
+            chain_candidates = []
+            for action in my_actions:
+                chain_len = self._count_run_length(action, my_hand)
+                if chain_len >= 1:
+                    chain_candidates.append((action, chain_len))
+            
+            if chain_candidates:
+                # 最長連鎖を選択
+                chain_candidates.sort(key=lambda x: x[1], reverse=True)
+                return chain_candidates[0][0], 0
+        
+        # 1. A/K（端カード）を優先的に出すが、トンネルルール考慮
+        suit_idx_map = {Suit.SPADE: 0, Suit.CLUB: 1, Suit.HEART: 2, Suit.DIAMOND: 3}
+        end_card_candidates = []
+        for a in my_actions:
+            if a.number in (Number.ACE, Number.KING):
+                suit_idx = suit_idx_map[a.suit]
+                is_ace_out = state.field_cards[suit_idx][0] == 1
+                is_king_out = state.field_cards[suit_idx][12] == 1
+                
+                # トンネルが既に片方開いている場合のみ出す
+                if a.number == Number.ACE and is_king_out:
+                    end_card_candidates.append(a)
+                elif a.number == Number.KING and is_ace_out:
+                    end_card_candidates.append(a)
+        
+        if end_card_candidates:
+            return random.choice(end_card_candidates), 0
+
+        # 2. 連続カード（ラン）の起点を優先（長い方が優先）
         run_candidates = []
         for action in my_actions:
             run_length = self._count_run_length(action, my_hand)
@@ -846,6 +905,24 @@ class HybridStrongestAI:
         
         return run_length
     
+    def _get_game_phase(self, state):
+        """ゲームフェーズを判定
+        
+        Returns:
+            - "early": 序盤（手札が多い）
+            - "middle": 中盤
+            - "endgame": 終盤（手札が少ない）
+        """
+        my_hand_size = len(state.players_cards[self.my_player_num])
+        total_cards_played = np.sum(state.field_cards)
+        
+        if my_hand_size >= 12 or total_cards_played <= 20:
+            return "early"
+        elif my_hand_size >= 5:
+            return "middle"
+        else:
+            return "endgame"
+    
     def _evaluate_strategic_actions(self, state, tracker, my_actions):
         """Phase 2改善: 戦略的評価（強化版）
         
@@ -857,8 +934,21 @@ class HybridStrongestAI:
         bonus = {}
         my_hand = state.players_cards[self.my_player_num]
         
+        # ゲームフェーズを判定
+        game_phase = self._get_game_phase(state)
+        
         # 相手モードの取得と重み係数の設定
         mode_weights = {"tunnel_lock": 1.0, "burst_force": 1.0, "heuristic": 1.0}
+        
+        # ゲームフェーズに応じて重み調整
+        if game_phase == "early":
+            # 序盤は手札温存とトンネル戦略重視
+            mode_weights["heuristic"] = 1.5
+            mode_weights["tunnel_lock"] = 1.3
+        elif game_phase == "endgame":
+            # 終盤は手札を早く減らすことを重視
+            mode_weights["heuristic"] = 2.0
+            mode_weights["burst_force"] = 1.5
         
         if self._opponent_model:
             # 各相手のモードを判定し、最も脅威度の高い相手に合わせて戦略を調整
@@ -1302,9 +1392,10 @@ class HybridStrongestAI:
         return weak_suits
     
     def _evaluate_run_strategy(self, state, my_hand, my_actions):
-        """連続カード（ラン）戦略
+        """連続カード（ラン）戦略（強化版）
         
         連続して出せるカードがある場合、その起点となるカードに高いボーナスを与える
+        さらに、相手がブロックできない連鎖かどうかも考慮
         """
         bonus = {}
         suit_to_index = {Suit.SPADE: 0, Suit.CLUB: 1, Suit.HEART: 2, Suit.DIAMOND: 3}
@@ -1316,6 +1407,7 @@ class HybridStrongestAI:
             
             # このカードを出した後、連続して出せるカードを数える
             run_length = 0
+            consecutive_in_hand = []
             
             if num_idx < 6:  # 7より小さい側
                 # 下方向に連続して出せるか
@@ -1324,6 +1416,7 @@ class HybridStrongestAI:
                     next_card = Card(suit, self._index_to_number(check_idx))
                     if next_card in my_hand:
                         run_length += 1
+                        consecutive_in_hand.append(next_card)
                         check_idx -= 1
                     else:
                         break
@@ -1334,51 +1427,132 @@ class HybridStrongestAI:
                     next_card = Card(suit, self._index_to_number(check_idx))
                     if next_card in my_hand:
                         run_length += 1
+                        consecutive_in_hand.append(next_card)
                         check_idx += 1
                     else:
                         break
             
-            # 連続カードが長いほど大きなボーナス
+            # 連続カードが長いほど大きなボーナス（指数的に増加）
             if run_length >= 1:
-                bonus[action] = run_length * 8
+                # 基本ボーナス: 連鎖長の二乗
+                base_bonus = (run_length + 1) ** 1.5 * 6
+                
+                # 相手がブロックできない連鎖の場合は追加ボーナス
+                # （トンネルルールにより、端まで到達する連鎖は特に価値が高い）
+                if num_idx < 6 and (num_idx - run_length) <= 0:
+                    # Aまで到達する連鎖
+                    base_bonus *= 1.5
+                elif num_idx > 6 and (num_idx + run_length) >= 12:
+                    # Kまで到達する連鎖
+                    base_bonus *= 1.5
+                
+                bonus[action] = base_bonus
         
         return bonus
     
     def _evaluate_endgame_strategy(self, state, my_hand, my_actions):
-        """ゲーム終盤戦略
+        """ゲーム終盤戦略（強化版）
         
-        残り手札が少ない場合は、確実に出せるカードを優先する
+        残り手札が少ない場合は、確実に出せるカードを優先し、
+        最短ルートでのフィニッシュを目指す
         """
         bonus = {}
         
-        # 手札枚数に応じたボーナス倍率
+        # 手札枚数に応じたボーナス倍率（より急激な増加）
         hand_size = len(my_hand)
-        multiplier = max(1, 6 - hand_size)  # 残り5枚で×1、残り1枚で×5
+        multiplier = max(1, 8 - hand_size)  # 残り7枚で×1、残り1枚で×7
+        
+        # 終盤の緊急度評価（他プレイヤーの手札枚数も考慮）
+        min_opponent_hand = float('inf')
+        for p in range(state.players_num):
+            if p != self.my_player_num and p not in state.out_player:
+                opponent_hand_size = len(state.players_cards[p])
+                min_opponent_hand = min(min_opponent_hand, opponent_hand_size)
+        
+        # 相手より手札が多い場合は緊急度アップ
+        if min_opponent_hand != float('inf') and hand_size > min_opponent_hand:
+            multiplier *= 1.5
         
         for action in my_actions:
             score = 0
-            
-            # 出した後に確実に次のカードも出せる場合（連鎖可能）
             val = action.number.val
+            
+            # 連鎖可能性を最優先で評価
+            chain_length = self._calculate_chain_length(action, my_hand, state)
+            
+            if chain_length >= hand_size - 1:
+                # このカードから始めると全部出せる可能性 → 超高優先度
+                score += 100 * multiplier
+            elif chain_length >= 2:
+                # 長い連鎖が可能 → 高優先度
+                score += (chain_length ** 2) * 10 * multiplier
+            
+            # 端カード（A/K）は確実に出せるので評価が高い
             if val == 1 or val == 13:
-                # 端カードは確実に出せるので高評価
-                score += 15 * multiplier
-            else:
-                # 次のカードを持っているか確認
-                if val < 7:
-                    next_val = val - 1
-                else:
-                    next_val = val + 1
-                
-                if 1 <= next_val <= 13:
+                score += 20 * multiplier
+            
+            # 次のカードを持っているか確認
+            has_next = False
+            if val < 7:
+                next_val = val - 1
+                if next_val >= 1:
                     next_card = Card(action.suit, self._index_to_number(next_val - 1))
-                    if next_card in my_hand:
-                        score += 10 * multiplier
+                    has_next = next_card in my_hand
+            else:
+                next_val = val + 1
+                if next_val <= 13:
+                    next_card = Card(action.suit, self._index_to_number(next_val - 1))
+                    has_next = next_card in my_hand
+            
+            if has_next:
+                score += 15 * multiplier
+            
+            # 孤立カード（前後に繋がりがない）は優先度を下げる
+            if not has_next and val != 1 and val != 13:
+                score -= 5 * multiplier
             
             if score > 0:
                 bonus[action] = score
         
         return bonus
+    
+    def _calculate_chain_length(self, start_card, my_hand, state):
+        """指定カードから始まる連鎖の長さを計算"""
+        suit = start_card.suit
+        num_idx = start_card.number.val - 1
+        chain_length = 1
+        
+        # 場のカードも考慮してより正確に計算
+        suit_idx = {Suit.SPADE: 0, Suit.CLUB: 1, Suit.HEART: 2, Suit.DIAMOND: 3}[suit]
+        
+        if num_idx < 6:
+            # 下方向
+            check_idx = num_idx - 1
+            while check_idx >= 0:
+                next_card = Card(suit, self._index_to_number(check_idx))
+                if next_card in my_hand:
+                    chain_length += 1
+                    check_idx -= 1
+                elif state.field_cards[suit_idx][check_idx] == 1:
+                    # 既に場に出ている → 連鎖継続可能
+                    check_idx -= 1
+                else:
+                    break
+        elif num_idx > 6:
+            # 上方向
+            check_idx = num_idx + 1
+            while check_idx <= 12:
+                next_card = Card(suit, self._index_to_number(check_idx))
+                if next_card in my_hand:
+                    chain_length += 1
+                    check_idx += 1
+                elif state.field_cards[suit_idx][check_idx] == 1:
+                    # 既に場に出ている → 連鎖継続可能
+                    check_idx += 1
+                else:
+                    break
+        
+        return chain_length
     
     def _evaluate_block_strategy(self, state, tracker, my_actions):
         """ブロック戦略
