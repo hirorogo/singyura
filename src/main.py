@@ -30,6 +30,8 @@ BURST_FORCE_WEIGHT = 3.0  # バースト誘導戦略の重み（強化版：2.5�
 # 新規追加：適応的戦略パラメータ
 AGGRESSIVE_MODE_THRESHOLD = 0.6  # 積極的モードに切り替える手札割合（残り40%以下で攻撃的に）
 DEFENSIVE_MODE_THRESHOLD = 0.8  # 防御的モードに切り替える手札割合（残り80%以上で慎重に）
+AGGRESSIVENESS_MULTIPLIER = 0.3  # 攻撃度による重み調整の係数
+URGENCY_MULTIPLIER = 0.5  # 緊急度による終盤戦略の補正係数
 
 # --- データクラス定義 ---
 
@@ -893,11 +895,11 @@ class HybridStrongestAI:
                 
                 if primary_opponent_mode == "tunnel_lock":
                     # トンネル活用型の相手 → トンネルロック戦略を強化
-                    mode_weights["tunnel_lock"] = TUNNEL_LOCK_WEIGHT * (1.0 + aggressiveness * 0.3)
+                    mode_weights["tunnel_lock"] = TUNNEL_LOCK_WEIGHT * (1.0 + aggressiveness * AGGRESSIVENESS_MULTIPLIER)
                     mode_weights["burst_force"] = 0.8
                 elif primary_opponent_mode == "burst_force":
                     # パス多用型の相手 → バースト誘導戦略を強化
-                    mode_weights["burst_force"] = BURST_FORCE_WEIGHT * (1.0 + aggressiveness * 0.3)
+                    mode_weights["burst_force"] = BURST_FORCE_WEIGHT * (1.0 + aggressiveness * AGGRESSIVENESS_MULTIPLIER)
                     mode_weights["tunnel_lock"] = 0.8
         
         # フェーズに応じた戦略調整
@@ -940,7 +942,7 @@ class HybridStrongestAI:
         # ブロック戦略（相手を詰まらせる）
         block_bonus = self._evaluate_block_strategy(state, tracker, my_actions)
         for action, score in block_bonus.items():
-            bonus[action] = bonus.get(action, 0) + (score * (1.0 - aggressiveness * 0.3))
+            bonus[action] = bonus.get(action, 0) + (score * (1.0 - aggressiveness * AGGRESSIVENESS_MULTIPLIER))
         
         # 新機能：カードカウンティング戦略
         counting_bonus = self._evaluate_card_counting_strategy(state, tracker, my_hand, my_actions)
@@ -1399,7 +1401,7 @@ class HybridStrongestAI:
             multiplier = max(1, 6 - hand_size)
         
         # 緊急度による調整
-        multiplier = multiplier * (1.0 + urgency * 0.5)
+        multiplier = multiplier * (1.0 + urgency * URGENCY_MULTIPLIER)
         
         for action in my_actions:
             score = 0
@@ -1459,13 +1461,15 @@ class HybridStrongestAI:
                 
                 # 場の進行状況を分析
                 # 7から両側にどれだけ進んでいるか
-                low_progress = 0  # 7→1方向
+                low_progress = 0  # 7→1方向の進行度
+                # 7より小さい側で最も進んだ位置を探す
                 for i in range(6, -1, -1):
                     if state.field_cards[suit_idx][i] == 1:
                         low_progress = 6 - i
                         break
                 
-                high_progress = 0  # 7→13方向
+                high_progress = 0  # 7→13方向の進行度
+                # 7より大きい側で最も進んだ位置を探す
                 for i in range(6, 13):
                     if state.field_cards[suit_idx][i] == 1:
                         high_progress = i - 6
