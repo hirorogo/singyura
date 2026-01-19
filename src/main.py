@@ -11,8 +11,8 @@ MY_PLAYER_NUM = 0     # 自分のプレイヤー番号
 
 # シミュレーション用設定
 # 大会モード: 処理時間を気にせず最強を目指す（実証済み最適値）
-SIMULATION_COUNT = 500  # 1手につき何回シミュレーションするか（ベンチマーク実証: 44%勝率）
-SIMULATION_DEPTH = 300  # どこまで先読みするか
+SIMULATION_COUNT = 600  # 1手につき何回シミュレーションするか（強化版：500→600）
+SIMULATION_DEPTH = 350  # どこまで先読みするか（強化版：300→350）
 
 # Phase 2改善フラグ
 ENABLE_TUNNEL_LOCK = True  # トンネルロック戦略
@@ -20,12 +20,18 @@ ENABLE_BURST_FORCE = True  # バースト誘導戦略
 
 # 確率的推論の設定
 BELIEF_STATE_DECAY_FACTOR = 0.05  # パス観測時の確率減衰率（実証済み）
-DETERMINIZATION_ATTEMPTS = 100  # 確定化のリトライ回数（実証済み）
+DETERMINIZATION_ATTEMPTS = 120  # 確定化のリトライ回数（強化版：100→120）
 
-# 戦略重み付け係数
-STRATEGY_WEIGHT_MULTIPLIER = 0.5  # 戦略ボーナスの影響度（実証済み）
-TUNNEL_LOCK_WEIGHT = 2.5  # トンネルロック戦略の重み
-BURST_FORCE_WEIGHT = 2.5  # バースト誘導戦略の重み
+# 戦略重み付け係数（強化版：戦略ボーナスの影響を増強）
+STRATEGY_WEIGHT_MULTIPLIER = 1.0  # 戦略ボーナスの影響度（強化版：0.5→1.0）
+TUNNEL_LOCK_WEIGHT = 3.0  # トンネルロック戦略の重み（強化版：2.5→3.0）
+BURST_FORCE_WEIGHT = 3.0  # バースト誘導戦略の重み（強化版：2.5→3.0）
+
+# 新規追加：適応的戦略パラメータ
+AGGRESSIVE_MODE_THRESHOLD = 0.6  # 積極的モードに切り替える手札割合（残り40%以下で攻撃的に）
+DEFENSIVE_MODE_THRESHOLD = 0.8  # 防御的モードに切り替える手札割合（残り80%以上で慎重に）
+AGGRESSIVENESS_MULTIPLIER = 0.3  # 攻撃度による重み調整の係数
+URGENCY_MULTIPLIER = 0.5  # 緊急度による終盤戦略の補正係数
 
 # --- データクラス定義 ---
 
@@ -620,8 +626,11 @@ class HybridStrongestAI:
 
         tracker = self._build_tracker_from_history(state)
         
+        # 新機能：ゲーム状態を評価して適応的に戦略を調整
+        game_state_info = self._evaluate_game_state(state)
+        
         # Phase 2改善: 戦略的評価を適用
-        strategic_bonus = self._evaluate_strategic_actions(state, tracker, my_actions)
+        strategic_bonus = self._evaluate_strategic_actions(state, tracker, my_actions, game_state_info)
 
         action_scores = {action: 0 for action in candidates}
 
@@ -747,6 +756,79 @@ class HybridStrongestAI:
 
         return random.choice(my_actions), 0
     
+    def _evaluate_game_state(self, state):
+        """ゲームの現在の状態を評価し、戦略調整のための情報を返す
+        
+        Returns:
+            dict: ゲーム状態情報
+                - 'phase': 'early'/'middle'/'late' - ゲームフェーズ
+                - 'my_position': 'leading'/'middle'/'behind' - 自分の位置
+                - 'urgency': 0.0~1.0 - 緊急度（バースト危機）
+                - 'aggressiveness': 0.0~1.0 - 推奨攻撃度
+        """
+        my_hand_size = len(state.players_cards[self.my_player_num])
+        
+        # 他プレイヤーの手札サイズを取得
+        opponent_hand_sizes = []
+        for p in range(state.players_num):
+            if p != self.my_player_num and p not in state.out_player:
+                opponent_hand_sizes.append(len(state.players_cards[p]))
+        
+        # ゲームフェーズの判定（残り手札の割合で判断）
+        # 初期手札数の推定（52枚を均等に配布）
+        initial_hand_size = 52 // state.players_num
+        hand_ratio = my_hand_size / max(1, initial_hand_size)
+        
+        if hand_ratio > DEFENSIVE_MODE_THRESHOLD:
+            phase = 'early'
+        elif hand_ratio > AGGRESSIVE_MODE_THRESHOLD:
+            phase = 'middle'
+        else:
+            phase = 'late'
+        
+        # 自分の相対位置（手札サイズの比較）
+        if not opponent_hand_sizes:
+            my_position = 'leading'
+        else:
+            avg_opponent_size = sum(opponent_hand_sizes) / len(opponent_hand_sizes)
+            if my_hand_size < avg_opponent_size - 2:
+                my_position = 'leading'
+            elif my_hand_size > avg_opponent_size + 2:
+                my_position = 'behind'
+            else:
+                my_position = 'middle'
+        
+        # 緊急度（パス回数に基づく）
+        my_pass_count = state.pass_count[self.my_player_num]
+        urgency = min(1.0, my_pass_count / 3.0)
+        
+        # 推奨攻撃度の計算
+        aggressiveness = 0.5  # ベースライン
+        
+        if phase == 'late':
+            aggressiveness += 0.3  # 終盤は積極的に
+        elif phase == 'early':
+            aggressiveness -= 0.1  # 序盤は慎重に
+        
+        if my_position == 'leading':
+            aggressiveness += 0.2  # リードしている場合は攻撃的に
+        elif my_position == 'behind':
+            aggressiveness -= 0.1  # 遅れている場合はやや慎重に
+        
+        if urgency > 0.6:
+            aggressiveness += 0.2  # バースト危機は積極的にカードを出す
+        
+        aggressiveness = max(0.0, min(1.0, aggressiveness))
+        
+        return {
+            'phase': phase,
+            'my_position': my_position,
+            'urgency': urgency,
+            'aggressiveness': aggressiveness,
+            'my_hand_size': my_hand_size,
+            'opponent_hand_sizes': opponent_hand_sizes
+        }
+    
     def _count_run_length(self, action, my_hand):
         """連続して出せるカードの長さを数える"""
         num_idx = action.number.val - 1
@@ -774,19 +856,25 @@ class HybridStrongestAI:
         
         return run_length
     
-    def _evaluate_strategic_actions(self, state, tracker, my_actions):
+    def _evaluate_strategic_actions(self, state, tracker, my_actions, game_state_info):
         """Phase 2改善: 戦略的評価（強化版）
         
         OpponentModelに基づいて動的に戦略重み付けを変更
         - Tunnel Lock モード: トンネル封鎖戦略を強化
         - Burst Force モード: バースト誘導戦略を強化
         - Neutral モード: バランス型
+        
+        さらにゲーム状態に応じて適応的に重みを調整
         """
         bonus = {}
         my_hand = state.players_cards[self.my_player_num]
         
         # 相手モードの取得と重み係数の設定
         mode_weights = {"tunnel_lock": 1.0, "burst_force": 1.0, "heuristic": 1.0}
+        
+        # ゲーム状態に応じた重み調整
+        aggressiveness = game_state_info['aggressiveness']
+        phase = game_state_info['phase']
         
         if self._opponent_model:
             # 各相手のモードを判定し、最も脅威度の高い相手に合わせて戦略を調整
@@ -807,12 +895,21 @@ class HybridStrongestAI:
                 
                 if primary_opponent_mode == "tunnel_lock":
                     # トンネル活用型の相手 → トンネルロック戦略を強化
-                    mode_weights["tunnel_lock"] = TUNNEL_LOCK_WEIGHT
+                    mode_weights["tunnel_lock"] = TUNNEL_LOCK_WEIGHT * (1.0 + aggressiveness * AGGRESSIVENESS_MULTIPLIER)
                     mode_weights["burst_force"] = 0.8
                 elif primary_opponent_mode == "burst_force":
                     # パス多用型の相手 → バースト誘導戦略を強化
-                    mode_weights["burst_force"] = BURST_FORCE_WEIGHT
+                    mode_weights["burst_force"] = BURST_FORCE_WEIGHT * (1.0 + aggressiveness * AGGRESSIVENESS_MULTIPLIER)
                     mode_weights["tunnel_lock"] = 0.8
+        
+        # フェーズに応じた戦略調整
+        if phase == 'late':
+            # 終盤は確実性重視
+            mode_weights["heuristic"] = 1.5
+        elif phase == 'early':
+            # 序盤はバランス重視
+            mode_weights["tunnel_lock"] *= 0.8
+            mode_weights["burst_force"] *= 0.8
         
         # トンネルロック戦略
         if ENABLE_TUNNEL_LOCK:
@@ -834,17 +931,22 @@ class HybridStrongestAI:
         # 連続カード（ラン）戦略
         run_bonus = self._evaluate_run_strategy(state, my_hand, my_actions)
         for action, score in run_bonus.items():
-            bonus[action] = bonus.get(action, 0) + score
+            bonus[action] = bonus.get(action, 0) + (score * (1.0 + aggressiveness * 0.2))
         
         # ゲーム終盤戦略（残り手札が少ない場合）
-        if len(my_hand) <= 5:
-            endgame_bonus = self._evaluate_endgame_strategy(state, my_hand, my_actions)
+        if len(my_hand) <= 5 or phase == 'late':
+            endgame_bonus = self._evaluate_endgame_strategy(state, my_hand, my_actions, game_state_info)
             for action, score in endgame_bonus.items():
                 bonus[action] = bonus.get(action, 0) + score
         
         # ブロック戦略（相手を詰まらせる）
         block_bonus = self._evaluate_block_strategy(state, tracker, my_actions)
         for action, score in block_bonus.items():
+            bonus[action] = bonus.get(action, 0) + (score * (1.0 - aggressiveness * AGGRESSIVENESS_MULTIPLIER))
+        
+        # 新機能：カードカウンティング戦略
+        counting_bonus = self._evaluate_card_counting_strategy(state, tracker, my_hand, my_actions)
+        for action, score in counting_bonus.items():
             bonus[action] = bonus.get(action, 0) + score
         
         return bonus
@@ -1279,16 +1381,27 @@ class HybridStrongestAI:
         
         return bonus
     
-    def _evaluate_endgame_strategy(self, state, my_hand, my_actions):
-        """ゲーム終盤戦略
+    def _evaluate_endgame_strategy(self, state, my_hand, my_actions, game_state_info):
+        """ゲーム終盤戦略（強化版）
         
         残り手札が少ない場合は、確実に出せるカードを優先する
+        ゲーム状態に応じて動的に調整
         """
         bonus = {}
         
-        # 手札枚数に応じたボーナス倍率
+        # 手札枚数とゲームフェーズに応じたボーナス倍率
         hand_size = len(my_hand)
-        multiplier = max(1, 6 - hand_size)  # 残り5枚で×1、残り1枚で×5
+        phase = game_state_info['phase']
+        urgency = game_state_info['urgency']
+        
+        # 基本倍率
+        if phase == 'late':
+            multiplier = max(1, 8 - hand_size)  # 終盤は強力に
+        else:
+            multiplier = max(1, 6 - hand_size)
+        
+        # 緊急度による調整
+        multiplier = multiplier * (1.0 + urgency * URGENCY_MULTIPLIER)
         
         for action in my_actions:
             score = 0
@@ -1308,10 +1421,93 @@ class HybridStrongestAI:
                 if 1 <= next_val <= 13:
                     next_card = Card(action.suit, self._index_to_number(next_val - 1))
                     if next_card in my_hand:
-                        score += 10 * multiplier
+                        score += 12 * multiplier
             
             if score > 0:
                 bonus[action] = score
+        
+        return bonus
+    
+    def _evaluate_card_counting_strategy(self, state, tracker, my_hand, my_actions):
+        """カードカウンティング戦略
+        
+        場に出たカードと自分の手札から、残りのカードを推定し、
+        より有利な判断を行う
+        """
+        bonus = {}
+        suit_to_index = {Suit.SPADE: 0, Suit.CLUB: 1, Suit.HEART: 2, Suit.DIAMOND: 3}
+        
+        # 各スートについて分析
+        for suit in Suit:
+            suit_idx = suit_to_index[suit]
+            
+            # このスートで場に出ているカードを数える
+            cards_on_field = sum(state.field_cards[suit_idx])
+            
+            # 自分が持っているこのスートのカード
+            my_cards_in_suit = [c for c in my_hand if c.suit == suit]
+            
+            # 残りのカード数（相手が持っている可能性のあるカード）
+            # 全13枚 - 場のカード - 自分のカード
+            remaining_cards = 13 - cards_on_field - len(my_cards_in_suit)
+            
+            # このスートで出せるアクションを評価
+            for action in my_actions:
+                if action.suit != suit:
+                    continue
+                
+                score = 0
+                num_idx = action.number.val - 1
+                
+                # 場の進行状況を分析
+                # 7から両側にどれだけ進んでいるか
+                low_progress = 0  # 7→1方向の進行度
+                # 7より小さい側で最も進んだ位置を探す
+                for i in range(6, -1, -1):
+                    if state.field_cards[suit_idx][i] == 1:
+                        low_progress = 6 - i
+                        break
+                
+                high_progress = 0  # 7→13方向の進行度
+                # 7より大きい側で最も進んだ位置を探す
+                for i in range(6, 13):
+                    if state.field_cards[suit_idx][i] == 1:
+                        high_progress = i - 6
+                        break
+                
+                # このカードを出すことで進行する方向の評価
+                if num_idx < 6:  # 低い方向
+                    # このスートの低い側がまだ進んでいない場合、リスク
+                    if low_progress < 2 and remaining_cards > 3:
+                        score -= 5  # 相手に道を開く可能性
+                    elif low_progress >= 4:
+                        score += 8  # もう進んでいるので安全
+                elif num_idx > 6:  # 高い方向
+                    # このスートの高い側がまだ進んでいない場合、リスク
+                    if high_progress < 2 and remaining_cards > 3:
+                        score -= 5
+                    elif high_progress >= 4:
+                        score += 8
+                
+                # 相手が持っているカードが少ない場合は攻撃的に
+                if remaining_cards <= 2:
+                    score += 10  # ほぼ支配している
+                elif remaining_cards <= 4:
+                    score += 5  # やや有利
+                
+                # このカードを出すことで次に出せるカードが増えるか
+                potential_next_cards = 0
+                for c in my_cards_in_suit:
+                    c_idx = c.number.val - 1
+                    if num_idx < 6 and c_idx == num_idx - 1:
+                        potential_next_cards += 1
+                    elif num_idx > 6 and c_idx == num_idx + 1:
+                        potential_next_cards += 1
+                
+                score += potential_next_cards * 6
+                
+                if score != 0:
+                    bonus[action] = score
         
         return bonus
     
