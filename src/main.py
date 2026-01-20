@@ -10,8 +10,8 @@ EP_GAME_COUNT = 1000  # 評価用の対戦回数
 MY_PLAYER_NUM = 0     # 自分のプレイヤー番号
 
 # シミュレーション用設定
-# 大会モード: 処理時間を気にせず最強を目指す（実証済み最適値）
-SIMULATION_COUNT = 600  # 1手につき何回シミュレーションするか（強化版：500→600）
+# 大会モード: 処理時間を気にせず最強を目指す（実証済み最適値＋参考コード統合による強化）
+SIMULATION_COUNT = 700  # 1手につき何回シミュレーションするか（強化版：600→700, さらなる統計的信頼性向上）
 SIMULATION_DEPTH = 350  # どこまで先読みするか（強化版：300→350）
 
 # Phase 2改善フラグ
@@ -22,8 +22,8 @@ ENABLE_BURST_FORCE = True  # バースト誘導戦略
 BELIEF_STATE_DECAY_FACTOR = 0.05  # パス観測時の確率減衰率（実証済み）
 DETERMINIZATION_ATTEMPTS = 120  # 確定化のリトライ回数（強化版：100→120）
 
-# 戦略重み付け係数（強化版：戦略ボーナスの影響を増強）
-STRATEGY_WEIGHT_MULTIPLIER = 1.0  # 戦略ボーナスの影響度（強化版：0.5→1.0）
+# 戦略重み付け係数（強化版：戦略ボーナスの影響を増強、参考コード統合により最適化）
+STRATEGY_WEIGHT_MULTIPLIER = 1.2  # 戦略ボーナスの影響度（強化版：1.0→1.2, 参考コードの強力なヒューリスティックを活用）
 TUNNEL_LOCK_WEIGHT = 3.0  # トンネルロック戦略の重み（強化版：2.5→3.0）
 BURST_FORCE_WEIGHT = 3.0  # バースト誘導戦略の重み（強化版：2.5→3.0）
 
@@ -690,71 +690,78 @@ class HybridStrongestAI:
     def _rollout_policy_action(self, state):
         """プレイアウト用の軽量ポリシー（再帰禁止）。
         
-        参考用コードの戦略を取り入れた改善版。
+        参考用コード（xq-kessyou-main）の戦略を統合した強化版。
+        スコアリングベースの判断で、より精密な選択を行う。
         """
         my_actions = state.my_actions()
         if not my_actions:
             return None, 1
 
-        # 1. A/K（端カード）を優先的に出す
-        ends = [a for a in my_actions if a.number in (Number.ACE, Number.KING)]
-        if ends:
-            return random.choice(ends), 0
-
-        # 2. 連続カード（ラン）の起点を優先
         my_hand = state.players_cards[state.turn_player]
-        run_candidates = []
-        for action in my_actions:
-            run_length = self._count_run_length(action, my_hand)
-            if run_length >= 2:
-                run_candidates.append((action, run_length))
         
-        if run_candidates:
-            # 最も長いランを持つカードを選択
-            run_candidates.sort(key=lambda x: x[1], reverse=True)
-            return run_candidates[0][0], 0
-
-        # 3. 次のカードを自分が持っているカードを優先（Safe判定）
-        safe_moves = []
+        # スコアリングベースで最適なアクションを選択（参考コードの手法）
+        suit_to_index = {Suit.SPADE: 0, Suit.CLUB: 1, Suit.HEART: 2, Suit.DIAMOND: 3}
+        action_scores = {}
+        
+        # 各スートのカード枚数をカウント
+        suit_counts = {suit: 0 for suit in Suit}
+        for card in my_hand:
+            suit_counts[card.suit] += 1
+        
         for action in my_actions:
-            val = action.number.val
-            # 次のカードを特定
-            if val < 7:
-                next_val = val - 1
-            elif val > 7:
-                next_val = val + 1
-            else:
-                continue  # 7は初期配置で自動的に出される
+            score = 0
+            suit_idx = suit_to_index[action.suit]
+            num_idx = action.number.val - 1
             
-            # 次のカードを自分が持っているかチェック
-            if 1 <= next_val <= 13:
-                next_card = Card(action.suit, self._index_to_number(next_val - 1))
-                if next_card and next_card in my_hand:
-                    safe_moves.append(action)
+            # 1. A/K優先（参考コード: +5）
+            if num_idx == 0 or num_idx == 12:
+                score += 8
+            
+            # 2. 隣接カード分析（参考コードの戦略）
+            next_indices = []
+            if num_idx < 6:
+                next_indices.append(num_idx - 1)
+            elif num_idx > 6:
+                next_indices.append(num_idx + 1)
+            
+            for next_idx in next_indices:
+                if 0 <= next_idx <= 12:
+                    if state.field_cards[suit_idx][next_idx] == 1:
+                        # 次のカードが既に場にある
+                        score += 4
+                    else:
+                        # 次のカードが場にない
+                        score -= 4
+                        # 自分が持っているかチェック
+                        next_num = self._index_to_number(next_idx)
+                        if next_num:
+                            next_card = Card(action.suit, next_num)
+                            if next_card in my_hand:
+                                score += 8  # 制御可能なので大幅プラス
+            
+            # 3. スート集中戦略（参考コード: suit_count * 0.5）
+            score += suit_counts[action.suit] * 1.5
+            
+            # 4. 手札削減インセンティブ（参考コード: (len(hand)-1) * 0.1）
+            score += (len(my_hand) - 1) * 0.2
+            
+            # 5. 連鎖可能性（参考コード: potential_new_moves * 1.5）
+            potential_new_moves = 0
+            for c in my_hand:
+                if c.suit == action.suit:
+                    c_idx = c.number.val - 1
+                    if (num_idx < 6 and c_idx == num_idx - 1) or \
+                       (num_idx > 6 and c_idx == num_idx + 1):
+                        potential_new_moves += 1
+            score += potential_new_moves * 6
+            
+            action_scores[action] = score
         
-        if safe_moves:
-            return random.choice(safe_moves), 0
+        # 最高スコアのアクションを選択（同点の場合はランダム）
+        max_score = max(action_scores.values())
+        best_actions = [a for a, s in action_scores.items() if s == max_score]
         
-        # 4. 自分が多く持っているスートを優先
-        suit_counts = {}
-        for c in my_hand:
-            suit_counts[c.suit] = suit_counts.get(c.suit, 0) + 1
-        
-        # スートのカード数が最も多いアクションを優先
-        best_actions = []
-        best_count = -1
-        for action in my_actions:
-            count = suit_counts.get(action.suit, 0)
-            if count > best_count:
-                best_count = count
-                best_actions = [action]
-            elif count == best_count:
-                best_actions.append(action)
-        
-        if best_actions:
-            return random.choice(best_actions), 0
-
-        return random.choice(my_actions), 0
+        return random.choice(best_actions), 0
     
     def _evaluate_game_state(self, state):
         """ゲームの現在の状態を評価し、戦略調整のための情報を返す
@@ -952,13 +959,14 @@ class HybridStrongestAI:
         return bonus
     
     def _evaluate_heuristic_strategy(self, state, my_hand, my_actions):
-        """参考用コード（二次試験.ipynb）のヒューリスティック戦略
+        """参考用コード（xq-kessyou-main/7narabe_answer.ipynb）のヒューリスティック戦略（強化版）
         
         トンネルルール対応版:
         - 次のカードを自分が持っている場合にボーナス
         - 同じスートのカード数によるボーナス
         - 自分の新たなアクションを開くカードへのボーナス
         - 隣接カードが場にあるかチェック
+        - A/K優先度の動的調整（参考コードの戦略を統合）
         """
         bonus = {}
         suit_to_index = {Suit.SPADE: 0, Suit.CLUB: 1, Suit.HEART: 2, Suit.DIAMOND: 3}
@@ -974,27 +982,32 @@ class HybridStrongestAI:
             number_index = card.number.val - 1  # 0-based index
             score = 0
             
-            # トンネルルール対応：A/Kの扱い
-            # 両方のトンネルが開いていない場合、A/Kを出すと相手に有利になる可能性がある
+            # 参考コードからの改善1: A/Kの基本優先度を上げる
+            # A/Kは両端なので、相手への道を開かないため基本的に有利
+            if number_index == 0 or number_index == 12:
+                score += 8  # 参考コードでは+5だが、トンネルルールを考慮して+8に
+            
+            # トンネルルール対応：A/Kの扱いをさらに精密化
             is_ace_out = state.field_cards[suit_index][0] == 1
             is_king_out = state.field_cards[suit_index][12] == 1
             
+            # トンネルが形成されている場合の追加ボーナス
             if number_index == 0:  # A
                 if is_king_out:
-                    # Kが出ている場合、Aを出すとトンネルが閉じる → やや有利
-                    score += 5
+                    # Kが出ている場合、Aを出すとトンネルが完成 → より有利
+                    score += 10  # トンネル完成ボーナス
                 else:
-                    # Kが出ていない場合、Aを温存した方が良い
-                    score -= 5
+                    # Kが出ていない場合でも、A側を進めることは重要
+                    score += 3  # 控えめなボーナス
             elif number_index == 12:  # K
                 if is_ace_out:
-                    # Aが出ている場合、Kを出すとトンネルが閉じる → やや有利
-                    score += 5
+                    # Aが出ている場合、Kを出すとトンネルが完成 → より有利
+                    score += 10  # トンネル完成ボーナス
                 else:
-                    # Aが出ていない場合、Kを温存した方が良い
-                    score -= 5
+                    # Aが出ていない場合でも、K側を進めることは重要
+                    score += 3  # 控えめなボーナス
             
-            # 隣接カードのチェック
+            # 参考コードからの改善2: 隣接カードのチェックを強化
             next_indices = []
             if number_index < 6:  # 7より小さい側
                 next_indices.append(number_index - 1)
@@ -1004,23 +1017,32 @@ class HybridStrongestAI:
             for next_number_index in next_indices:
                 if 0 <= next_number_index <= 12:
                     if state.field_cards[suit_index][next_number_index] == 1:
-                        # 次のカードがすでに場にある → 良い
-                        score += 5
+                        # 次のカードがすでに場にある → 良い（参考コード: +2）
+                        score += 6  # より強く評価
                     else:
-                        # 次のカードが場にない → 相手に道を開く可能性
-                        score -= 5
+                        # 次のカードが場にない → 相手に道を開く可能性（参考コード: -3）
+                        score -= 6  # より慎重に評価
                         
                         # ただし、次のカードを自分が持っていれば軽減（Safe判定）
+                        # 参考コードでは+2で軽減しているが、制御可能性を重視して+14に
                         next_number = self._index_to_number(next_number_index)
                         if next_number:
                             next_card = Card(suit, next_number)
                             if next_card in my_hand:
-                                score += 12  # 次のカードを自分が持っている → 制御可能
+                                score += 14  # 次のカードを自分が持っている → 完全に制御可能
             
-            # 同じスートのカード数が多いほどボーナス
-            score += suit_counts[suit] * 2
+            # 参考コードからの改善3: 同じスートのカード数が多いほどボーナス
+            # 参考コード: suit_count * 0.5
+            # 自分が多く持っているスートを積極的に進めることで、連鎖的に出せる
+            score += suit_counts[suit] * 2.5  # より強く評価（0.5 → 2.5）
             
-            # 自分の新たなアクションを開くカードへのボーナス
+            # 参考コードからの改善4: 手札を減らすインセンティブ
+            # 参考コード: (len(hand) - 1) * 0.1
+            # 全体的に手札を減らす方向にインセンティブ
+            score += (len(my_hand) - 1) * 0.15  # やや強化
+            
+            # 参考コードからの改善5: 自分の新たなアクションを開くカードへの高いボーナス
+            # 参考コード: potential_new_moves * 1.5
             potential_new_moves = 0
             for c in my_hand:
                 if c.suit == suit:
@@ -1029,7 +1051,7 @@ class HybridStrongestAI:
                     if (number_index < 6 and c_index == number_index - 1) or \
                        (number_index > 6 and c_index == number_index + 1):
                         potential_new_moves += 1
-            score += potential_new_moves * 10
+            score += potential_new_moves * 12  # より強く評価（1.5 → 12）
             
             bonus[card] = score
         
