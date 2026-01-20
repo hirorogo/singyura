@@ -63,7 +63,7 @@ def parse_args():
     parser.add_argument(
         '--progress-interval',
         type=int,
-        default=10,
+        default=1,
         help='進捗表示の間隔（ゲーム数）（デフォルト: 10）'
     )
     
