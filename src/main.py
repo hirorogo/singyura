@@ -11,7 +11,7 @@ MY_PLAYER_NUM = 0     # 自分のプレイヤー番号
 
 # シミュレーション用設定
 # 大会モード: 処理時間を気にせず最強を目指す（実証済み最適値＋参考コード統合による強化）
-SIMULATION_COUNT = 700  # 1手につき何回シミュレーションするか（強化版：600→700, さらなる統計的信頼性向上）
+SIMULATION_COUNT = 1000  # 1手につき何回シミュレーションするか（超強化版：700→1000, 最高精度）
 SIMULATION_DEPTH = 350  # どこまで先読みするか（強化版：300→350）
 
 # Phase 2改善フラグ
@@ -23,9 +23,9 @@ BELIEF_STATE_DECAY_FACTOR = 0.05  # パス観測時の確率減衰率（実証�
 DETERMINIZATION_ATTEMPTS = 120  # 確定化のリトライ回数（強化版：100→120）
 
 # 戦略重み付け係数（強化版：戦略ボーナスの影響を増強、参考コード統合により最適化）
-STRATEGY_WEIGHT_MULTIPLIER = 1.2  # 戦略ボーナスの影響度（強化版：1.0→1.2, 参考コードの強力なヒューリスティックを活用）
-TUNNEL_LOCK_WEIGHT = 3.0  # トンネルロック戦略の重み（強化版：2.5→3.0）
-BURST_FORCE_WEIGHT = 3.0  # バースト誘導戦略の重み（強化版：2.5→3.0）
+STRATEGY_WEIGHT_MULTIPLIER = 1.5  # 戦略ボーナスの影響度（超強化：1.2→1.5）
+TUNNEL_LOCK_WEIGHT = 3.5  # トンネルロック戦略の重み（超強化：3.0→3.5）
+BURST_FORCE_WEIGHT = 3.5  # バースト誘導戦略の重み（超強化：3.0→3.5）
 
 # 新規追加：適応的戦略パラメータ
 AGGRESSIVE_MODE_THRESHOLD = 0.6  # 積極的モードに切り替える手札割合（残り40%以下で攻撃的に）
@@ -34,23 +34,23 @@ AGGRESSIVENESS_MULTIPLIER = 0.3  # 攻撃度による重み調整の係数
 URGENCY_MULTIPLIER = 0.5  # 緊急度による終盤戦略の補正係数
 
 # ヒューリスティック戦略の詳細パラメータ（参考コード統合による最適化）
-ACE_KING_BASE_BONUS = 8  # A/K基本ボーナス（参考コードの+5から強化）
+ACE_KING_BASE_BONUS = 10  # A/K基本ボーナス（超強化：8→10）
 TUNNEL_COMPLETE_BONUS = 10  # トンネル完成ボーナス
 ADJACENT_CARD_BONUS = 6  # 隣接カードが場にある場合のボーナス
 ADJACENT_CARD_PENALTY = 6  # 相手に道を開く可能性のペナルティ
-SAFE_MOVE_BONUS = 14  # 次のカードを自分が持つ場合のボーナス（完全制御可能）
+SAFE_MOVE_BONUS = 20  # 次のカードを自分が持つ場合のボーナス（完全制御可能、強化）
 SUIT_CONCENTRATION_MULTIPLIER = 2.5  # スート集中戦略の倍率（参考コードの*0.5から5倍に）
 HAND_REDUCTION_BONUS = 0.15  # 手札削減インセンティブ
-CHAIN_POTENTIAL_MULTIPLIER = 12  # 連鎖可能性の倍率（参考コードの*1.5から8倍に）
+CHAIN_POTENTIAL_MULTIPLIER = 15  # 連鎖可能性の倍率（超強化：12→15）
 
 # ロールアウトポリシーのパラメータ
-ROLLOUT_ACE_KING_BONUS = 8  # ロールアウト時のA/Kボーナス
-ROLLOUT_ADJACENT_BONUS = 4  # ロールアウト時の隣接カードボーナス
-ROLLOUT_ADJACENT_PENALTY = 4  # ロールアウト時の隣接カードペナルティ
-ROLLOUT_SAFE_BONUS = 8  # ロールアウト時のSafe判定ボーナス
-ROLLOUT_SUIT_MULTIPLIER = 1.5  # ロールアウト時のスート集中倍率
-ROLLOUT_HAND_REDUCTION = 0.2  # ロールアウト時の手札削減インセンティブ
-ROLLOUT_CHAIN_MULTIPLIER = 6  # ロールアウト時の連鎖可能性倍率
+ROLLOUT_ACE_KING_BONUS = 10  # ロールアウト時のA/Kボーナス（強化：8→10）
+ROLLOUT_ADJACENT_BONUS = 6  # ロールアウト時の隣接カードボーナス（強化：4→6）
+ROLLOUT_ADJACENT_PENALTY = 6  # ロールアウト時の隣接カードペナルティ（強化：4→6）
+ROLLOUT_SAFE_BONUS = 12  # ロールアウト時のSafe判定ボーナス（強化：8→12）
+ROLLOUT_SUIT_MULTIPLIER = 2.0  # ロールアウト時のスート集中倍率（強化：1.5→2.0）
+ROLLOUT_HAND_REDUCTION = 0.3  # ロールアウト時の手札削減インセンティブ（強化：0.2→0.3）
+ROLLOUT_CHAIN_MULTIPLIER = 8  # ロールアウト時の連鎖可能性倍率（強化：6→8）
 
 # 参考コード由来の高度なヒューリスティックパラメータ（戦略を尖らせるための重み）
 ADVANCED_HEURISTIC_PARAMS = {
@@ -59,8 +59,8 @@ ADVANCED_HEURISTIC_PARAMS = {
     'W_OTHERS_RISK': -127,    # 他人に塩を送るリスク（深度1あたりの減点）
     'W_SUIT_DOM': 84,         # スート支配力の重み
     'W_WIN_DASH': 41,         # 勝ち圏内の放出意欲
-    'P_THRESHOLD_BASE': 15,   # 基本のパスしきい値（修正: 118→15, 戦略ボーナスの実際のスケールに合わせる）
-    'P_KILL_ZONE': 25,        # 相手をハメる時のパスしきい値（修正: 170→25）
+    'P_THRESHOLD_BASE': 200,  # 基本のパスしきい値（超高値により、PASSをほぼ禁止）
+    'P_KILL_ZONE': 300,       # 相手をハメる時のパスしきい値（超高値で極めて慎重な判断）
     'P_WIN_THRESHOLD': -31,   # 勝ち圏内のパスしきい値
     # 新戦略パラメータ
     'W_NECROMANCER': 20.0,    # ネクロマンサー（バースト予知）のボーナス
