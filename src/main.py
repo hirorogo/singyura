@@ -33,6 +33,25 @@ DEFENSIVE_MODE_THRESHOLD = 0.8  # 防御的モードに切り替える手札割�
 AGGRESSIVENESS_MULTIPLIER = 0.3  # 攻撃度による重み調整の係数
 URGENCY_MULTIPLIER = 0.5  # 緊急度による終盤戦略の補正係数
 
+# ヒューリスティック戦略の詳細パラメータ（参考コード統合による最適化）
+ACE_KING_BASE_BONUS = 8  # A/K基本ボーナス（参考コードの+5から強化）
+TUNNEL_COMPLETE_BONUS = 10  # トンネル完成ボーナス
+ADJACENT_CARD_BONUS = 6  # 隣接カードが場にある場合のボーナス
+ADJACENT_CARD_PENALTY = 6  # 相手に道を開く可能性のペナルティ
+SAFE_MOVE_BONUS = 14  # 次のカードを自分が持つ場合のボーナス（完全制御可能）
+SUIT_CONCENTRATION_MULTIPLIER = 2.5  # スート集中戦略の倍率（参考コードの*0.5から5倍に）
+HAND_REDUCTION_BONUS = 0.15  # 手札削減インセンティブ
+CHAIN_POTENTIAL_MULTIPLIER = 12  # 連鎖可能性の倍率（参考コードの*1.5から8倍に）
+
+# ロールアウトポリシーのパラメータ
+ROLLOUT_ACE_KING_BONUS = 8  # ロールアウト時のA/Kボーナス
+ROLLOUT_ADJACENT_BONUS = 4  # ロールアウト時の隣接カードボーナス
+ROLLOUT_ADJACENT_PENALTY = 4  # ロールアウト時の隣接カードペナルティ
+ROLLOUT_SAFE_BONUS = 8  # ロールアウト時のSafe判定ボーナス
+ROLLOUT_SUIT_MULTIPLIER = 1.5  # ロールアウト時のスート集中倍率
+ROLLOUT_HAND_REDUCTION = 0.2  # ロールアウト時の手札削減インセンティブ
+ROLLOUT_CHAIN_MULTIPLIER = 6  # ロールアウト時の連鎖可能性倍率
+
 # --- データクラス定義 ---
 
 class Suit(Enum):
@@ -713,11 +732,11 @@ class HybridStrongestAI:
             suit_idx = suit_to_index[action.suit]
             num_idx = action.number.val - 1
             
-            # 1. A/K優先（参考コード: +5）
+            # 1. A/K優先
             if num_idx == 0 or num_idx == 12:
-                score += 8
+                score += ROLLOUT_ACE_KING_BONUS
             
-            # 2. 隣接カード分析（参考コードの戦略）
+            # 2. 隣接カード分析
             next_indices = []
             if num_idx < 6:
                 next_indices.append(num_idx - 1)
@@ -728,24 +747,24 @@ class HybridStrongestAI:
                 if 0 <= next_idx <= 12:
                     if state.field_cards[suit_idx][next_idx] == 1:
                         # 次のカードが既に場にある
-                        score += 4
+                        score += ROLLOUT_ADJACENT_BONUS
                     else:
                         # 次のカードが場にない
-                        score -= 4
+                        score -= ROLLOUT_ADJACENT_PENALTY
                         # 自分が持っているかチェック
                         next_num = self._index_to_number(next_idx)
                         if next_num:
                             next_card = Card(action.suit, next_num)
                             if next_card in my_hand:
-                                score += 8  # 制御可能なので大幅プラス
+                                score += ROLLOUT_SAFE_BONUS
             
-            # 3. スート集中戦略（参考コード: suit_count * 0.5）
-            score += suit_counts[action.suit] * 1.5
+            # 3. スート集中戦略
+            score += suit_counts[action.suit] * ROLLOUT_SUIT_MULTIPLIER
             
-            # 4. 手札削減インセンティブ（参考コード: (len(hand)-1) * 0.1）
-            score += (len(my_hand) - 1) * 0.2
+            # 4. 手札削減インセンティブ
+            score += (len(my_hand) - 1) * ROLLOUT_HAND_REDUCTION
             
-            # 5. 連鎖可能性（参考コード: potential_new_moves * 1.5）
+            # 5. 連鎖可能性
             potential_new_moves = 0
             for c in my_hand:
                 if c.suit == action.suit:
@@ -753,7 +772,7 @@ class HybridStrongestAI:
                     if (num_idx < 6 and c_idx == num_idx - 1) or \
                        (num_idx > 6 and c_idx == num_idx + 1):
                         potential_new_moves += 1
-            score += potential_new_moves * 6
+            score += potential_new_moves * ROLLOUT_CHAIN_MULTIPLIER
             
             action_scores[action] = score
         
@@ -985,7 +1004,7 @@ class HybridStrongestAI:
             # 参考コードからの改善1: A/Kの基本優先度を上げる
             # A/Kは両端なので、相手への道を開かないため基本的に有利
             if number_index == 0 or number_index == 12:
-                score += 8  # 参考コードでは+5だが、トンネルルールを考慮して+8に
+                score += ACE_KING_BASE_BONUS
             
             # トンネルルール対応：A/Kの扱いをさらに精密化
             is_ace_out = state.field_cards[suit_index][0] == 1
@@ -995,14 +1014,14 @@ class HybridStrongestAI:
             if number_index == 0:  # A
                 if is_king_out:
                     # Kが出ている場合、Aを出すとトンネルが完成 → より有利
-                    score += 10  # トンネル完成ボーナス
+                    score += TUNNEL_COMPLETE_BONUS
                 else:
                     # Kが出ていない場合でも、A側を進めることは重要
                     score += 3  # 控えめなボーナス
             elif number_index == 12:  # K
                 if is_ace_out:
                     # Aが出ている場合、Kを出すとトンネルが完成 → より有利
-                    score += 10  # トンネル完成ボーナス
+                    score += TUNNEL_COMPLETE_BONUS
                 else:
                     # Aが出ていない場合でも、K側を進めることは重要
                     score += 3  # 控えめなボーナス
@@ -1017,32 +1036,28 @@ class HybridStrongestAI:
             for next_number_index in next_indices:
                 if 0 <= next_number_index <= 12:
                     if state.field_cards[suit_index][next_number_index] == 1:
-                        # 次のカードがすでに場にある → 良い（参考コード: +2）
-                        score += 6  # より強く評価
+                        # 次のカードがすでに場にある → 良い
+                        score += ADJACENT_CARD_BONUS
                     else:
-                        # 次のカードが場にない → 相手に道を開く可能性（参考コード: -3）
-                        score -= 6  # より慎重に評価
+                        # 次のカードが場にない → 相手に道を開く可能性
+                        score -= ADJACENT_CARD_PENALTY
                         
                         # ただし、次のカードを自分が持っていれば軽減（Safe判定）
-                        # 参考コードでは+2で軽減しているが、制御可能性を重視して+14に
                         next_number = self._index_to_number(next_number_index)
                         if next_number:
                             next_card = Card(suit, next_number)
                             if next_card in my_hand:
-                                score += 14  # 次のカードを自分が持っている → 完全に制御可能
+                                score += SAFE_MOVE_BONUS  # 次のカードを自分が持っている → 完全に制御可能
             
             # 参考コードからの改善3: 同じスートのカード数が多いほどボーナス
-            # 参考コード: suit_count * 0.5
             # 自分が多く持っているスートを積極的に進めることで、連鎖的に出せる
-            score += suit_counts[suit] * 2.5  # より強く評価（0.5 → 2.5）
+            score += suit_counts[suit] * SUIT_CONCENTRATION_MULTIPLIER
             
             # 参考コードからの改善4: 手札を減らすインセンティブ
-            # 参考コード: (len(hand) - 1) * 0.1
             # 全体的に手札を減らす方向にインセンティブ
-            score += (len(my_hand) - 1) * 0.15  # やや強化
+            score += (len(my_hand) - 1) * HAND_REDUCTION_BONUS
             
             # 参考コードからの改善5: 自分の新たなアクションを開くカードへの高いボーナス
-            # 参考コード: potential_new_moves * 1.5
             potential_new_moves = 0
             for c in my_hand:
                 if c.suit == suit:
@@ -1051,7 +1066,7 @@ class HybridStrongestAI:
                     if (number_index < 6 and c_index == number_index - 1) or \
                        (number_index > 6 and c_index == number_index + 1):
                         potential_new_moves += 1
-            score += potential_new_moves * 12  # より強く評価（1.5 → 12）
+            score += potential_new_moves * CHAIN_POTENTIAL_MULTIPLIER
             
             bonus[card] = score
         
