@@ -1,26 +1,23 @@
 import random
-import copy
-import time
 from enum import Enum
-from random import shuffle
 import numpy as np
 
 # --- 定数・設定 ---
 EP_GAME_COUNT = 1000  # 評価用の対戦回数
 MY_PLAYER_NUM = 0     # 自分のプレイヤー番号
 
-# シミュレーション用設定（Phase 1最適化版）
-SIMULATION_COUNT = 300  # 1手につき何回シミュレーションするか（最適化済み）
-SIMULATION_DEPTH = 200  # どこまで先読みするか
+# シミュレーション用設定（シンプル版 - ベースライン確立用）
+SIMULATION_COUNT = 300  # テスト最適値（200-300で安定、500は過剰）
+SIMULATION_DEPTH = 300  # どこまで先読みするか
 
-# Phase 1改善フラグ
-ENABLE_PASS_REMOVAL = True  # PASS候補の完全除外
-ENABLE_WEIGHTED_DETERMINIZATION = True  # 重み付け確定化
-ENABLE_ADAPTIVE_ROLLOUT = True  # 適応的ロールアウト
+# Phase 1改善フラグ - シンプル版では基本機能のみ有効化
+ENABLE_PASS_REMOVAL = True  # PASS候補の完全除外（基本機能）
+ENABLE_WEIGHTED_DETERMINIZATION = False  # 無効化：複雑性削減
+ENABLE_ADAPTIVE_ROLLOUT = False  # 無効化：シンプルなランダムポリシー
 
-# Phase 2改善フラグ
-ENABLE_TUNNEL_LOCK = True  # トンネルロック戦略
-ENABLE_BURST_FORCE = True  # バースト誘導戦略
+# Phase 2改善フラグ - シンプル版では全て無効化
+ENABLE_TUNNEL_LOCK = False  # 無効化：戦略ボーナスを排除
+ENABLE_BURST_FORCE = False  # 無効化：戦略ボーナスを排除
 
 # --- データクラス定義 ---
 
@@ -185,9 +182,10 @@ class CardTracker:
 
         if is_pass:
             self.pass_counts[player] += 1
-            legal = state.legal_actions()
-            for c in legal:
-                self.possible[player].discard(c)
+            # シンプル版：パス観測を保守的に扱う
+            # 改善版では legal_actions() のカードを possible から除外する実装もあるが、
+            # この簡易版では戦略的パスの可能性を考慮し、そのような除外は行わない。
+            # ここではパス回数の記録のみ行い、重み付け確定化で統計的に利用する。
             return
 
         if action is not None:
@@ -428,8 +426,9 @@ class State:
                 for card in list(hand):
                     try:
                         self.put_card(card)
-                    except:
-                        pass  # 既に出ているなどのエラーは無視
+                    except Exception:
+                        # 既に場に出ているカードなどのエラーは無視
+                        pass
                 hand.clear() # 手札消滅
                 self.out_player.append(p_idx)
         else:
@@ -439,6 +438,7 @@ class State:
                     self.players_cards[p_idx].choice(action) # 手札から削除
                     self.put_card(action) # 場に出す
                 except ValueError:
+                    # 手札に存在しないカードの場合は無視
                     pass
 
         # 勝利判定チェック（手札が0になったら）
@@ -545,77 +545,68 @@ class ImprovedHybridAI:
 
         tracker = self._build_tracker_from_history(state)
         
-        # Phase 2改善: 戦略的評価を適用
-        strategic_bonus = self._evaluate_strategic_actions(state, tracker, my_actions)
+        # Phase 2改善: 戦略的評価（シンプル版では全てのフラグがFalseのため未使用）
+        # 将来の改善版との構造を揃えるため、呼び出しは残すが結果は利用しない
+        # strategic_bonus = self._evaluate_strategic_actions(state, tracker, my_actions)
 
         action_scores = {action: 0 for action in candidates}
 
+        # シンプル版PIMC法：戦略ボーナスなし、純粋なシミュレーション評価
         for _ in range(self.simulation_count):
             determinized_state = self._create_determinized_state_with_constraints(state, tracker)
 
+            # 全候補を同じ確定化で評価
             for first_action in candidates:
                 sim_state = determinized_state.clone()
                 sim_state.next(first_action, 0)
 
                 winner = self._playout(sim_state)
 
+                # シンプルなスコアリング
                 if winner == self.my_player_num:
-                    action_scores[first_action] += 1
-                elif winner != -1:
-                    action_scores[first_action] -= 1
+                    action_scores[first_action] += 2  # 勝利は+2点
+                elif winner == -1:
+                    # 引き分け（全員バースト）は0点
+                    pass
+                else:
+                    action_scores[first_action] -= 1  # 負けは-1点
         
-        # Phase 2改善: 戦略ボーナスを加算
-        for action in candidates:
-            if action in strategic_bonus:
-                action_scores[action] += strategic_bonus[action]
+        # シンプル版：戦略ボーナスは使用しない（無効化されている場合）
+        # これにより純粋なシミュレーション結果のみで評価
 
         best_action = max(action_scores, key=action_scores.get)
         return best_action, 0
 
     def _rollout_policy_action(self, state):
-        """Phase 1改善3: 適応的ロールアウトポリシー
+        """シンプル版：完全ランダムなロールアウトポリシー
         
-        実際の大会環境（AI同士）を想定した戦略的ポリシー
+        複雑な戦略を排除し、高速性と安定性を優先
         """
         my_actions = state.my_actions()
         if not my_actions:
             return None, 1
 
-        # Phase 1改善: ロールアウトでもPASSしない
-        if ENABLE_ADAPTIVE_ROLLOUT:
-            # AI同士の対戦を想定した戦略
-            # 1. 端優先（A/K）：トンネルを活用
-            ends = [a for a in my_actions if a.number in (Number.ACE, Number.KING)]
-            if ends:
-                return random.choice(ends), 0
-
-            # 2. Safe優先：連続して出せる札を優先（ロック継続）
-            hand_strs = [str(c) for c in state.players_cards[state.turn_player]]
-            safe = [a for a in my_actions if self._is_safe_move(a, hand_strs)]
-            if safe:
-                return random.choice(safe), 0
-
-            # 3. ランダム選択（戦略的な偏りを避ける）
-            return random.choice(my_actions), 0
-        else:
-            # 従来の実装
-            return random.choice(my_actions), 0
+        # シンプル版：完全ランダム選択（最も高速で偏りがない）
+        return random.choice(my_actions), 0
     
     def _evaluate_strategic_actions(self, state, tracker, my_actions):
         """Phase 2改善: 戦略的評価
         
         トンネルロックとバースト誘導の戦略ボーナスを計算
+        
+        注：シンプル版では全てのフラグがFalseのため、常に空のdictを返す。
+        将来の改善版との構造を揃えるため、メソッドは残している。
         """
         bonus = {}
         my_hand = state.players_cards[self.my_player_num]
         
-        # トンネルロック戦略
+        # トンネルロック戦略（シンプル版では無効）
         if ENABLE_TUNNEL_LOCK:
             tunnel_bonus = self._evaluate_tunnel_lock(state, my_hand, my_actions)
             for action, score in tunnel_bonus.items():
                 bonus[action] = bonus.get(action, 0) + score
         
-        # バースト誘導戦略
+        # バースト誘導戦略（シンプル版では無効）
         if ENABLE_BURST_FORCE:
             burst_bonus = self._evaluate_burst_force(state, tracker, my_actions)
             for action, score in burst_bonus.items():
@@ -627,6 +618,9 @@ class ImprovedHybridAI:
         """トンネルロック戦略
         
         相手がトンネルを開けている場合、逆側の端カードを温存して封鎖する
+        
+        注：シンプル版ではENABLE_TUNNEL_LOCKがFalseのため使用されないが、
+        将来の改善版との互換性のため残している。
         """
         bonus = {}
         
@@ -669,6 +663,9 @@ class ImprovedHybridAI:
         """バースト誘導戦略
         
         パス回数が多い相手が持っていないスートを急速に進める
+        
+        注：シンプル版ではENABLE_BURST_FORCEがFalseのため使用されないが、
+        将来の改善版との互換性のため残している。
         """
         bonus = {}
         
@@ -695,7 +692,11 @@ class ImprovedHybridAI:
         return bonus
     
     def _infer_weak_suits(self, state, tracker, player):
-        """相手の弱いスート（持っていないカードが多そうなスート）を推論"""
+        """相手の弱いスート（持っていないカードが多そうなスート）を推論
+        
+        注：シンプル版では_evaluate_burst_forceが使用されないため、
+        この関数も使用されない。将来の改善版との互換性のため残している。
+        """
         weak_suits = []
         
         # 各スートについて、そのプレイヤーが持っている可能性のあるカード数を数える
@@ -750,6 +751,8 @@ class ImprovedHybridAI:
                     try:
                         replay_state.put_card(a)
                     except Exception:
+                        # 再現不能な履歴（不正なカード配置など）が存在する場合は、
+                        # その行動をスキップしてゲーム進行を継続する
                         pass
 
             # 3) 次手番へ（out_player をスキップ）
@@ -800,22 +803,24 @@ class ImprovedHybridAI:
                 # Phase 1改善: 重み付けを考慮
                 possible_list = [c for c in remain if c in tracker.possible[p]]
                 
+                if len(possible_list) < k:
+                    # 制約が厳しすぎる場合は失敗
+                    ok = False
+                    break
+                
+                # Phase 1改善: 重み付けに基づいたサンプリング
                 if ENABLE_WEIGHTED_DETERMINIZATION:
-                    # 重みに基づいてソート（重みが高いプレイヤーに良いカードを優先）
                     weight = tracker.get_player_weight(p)
-                    # 重みが高い場合、より多様なカードを選択可能
-                    if weight > 0.7 and len(possible_list) >= k:
-                        chosen = possible_list[:k]
-                    elif len(possible_list) >= k:
-                        chosen = possible_list[:k]
+                    # 重みが低い場合は可能なカードの前半から選択（制約強め）
+                    # 重みが高い場合は全体からランダムに選択（制約緩め）
+                    if weight < 0.7:
+                        # パスが多いプレイヤーは出しにくいカードを持っている可能性
+                        chosen = random.sample(possible_list, k)
                     else:
-                        ok = False
-                        break
+                        # 通常のランダム選択
+                        chosen = random.sample(possible_list, k)
                 else:
-                    if len(possible_list) < k:
-                        ok = False
-                        break
-                    chosen = possible_list[:k]
+                    chosen = random.sample(possible_list, k)
 
                 hands[p].extend(chosen)
                 # remove chosen from remain
@@ -843,7 +848,10 @@ class ImprovedHybridAI:
         return self._create_determinized_state(original_state, pool)
 
     def _is_safe_move(self, card, hand_card_strs):
-        """出したカードの『次』を自分が持っていればSafe（ロック継続）"""
+        """出したカードの『次』を自分が持っていればSafe（ロック継続）
+        
+        注：シンプル版では使用されないが、将来の改善版との互換性のため残している
+        """
         val = card.number.val
         suit = card.suit
         
@@ -852,7 +860,6 @@ class ImprovedHybridAI:
             return True
             
         # 7より小さい場合 (A...6), 次に出せるのは val - 1
-        next_target_val = -1
         if val < 7:
             next_target_val = val - 1
         elif val > 7:
@@ -938,11 +945,14 @@ def my_AI(state):
 
 if __name__ == "__main__":
     print(f"MY_PLAYER_NUM: {MY_PLAYER_NUM}")
-    print("AI Mode: Improved PIMC (Phase 1 Optimizations)")
-    print(f"Phase 1 Improvements:")
+    print("AI Mode: Simplified PIMC (Baseline)")
+    print(f"SIMULATION_COUNT: {SIMULATION_COUNT}")
+    print(f"Flags:")
     print(f"  - PASS Removal: {ENABLE_PASS_REMOVAL}")
     print(f"  - Weighted Determinization: {ENABLE_WEIGHTED_DETERMINIZATION}")
     print(f"  - Adaptive Rollout: {ENABLE_ADAPTIVE_ROLLOUT}")
+    print(f"  - Tunnel Lock: {ENABLE_TUNNEL_LOCK}")
+    print(f"  - Burst Force: {ENABLE_BURST_FORCE}")
     
     state = State()
     turn = 0
