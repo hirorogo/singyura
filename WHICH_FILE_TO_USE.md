@@ -70,21 +70,33 @@ python src/submission_colab.py
 
 ## 📊 ベンチマーク実行方法
 
-### 最強AI（80%版）のベンチマーク
+### 統合ベンチマーク（推奨）⭐
 ```bash
 cd src
-python benchmark.py  # main.py を使用
+python benchmark.py  # 標準（100ゲーム）
+python benchmark.py --help  # ヘルプ表示
 ```
 
 **期待される結果**:
-- 勝率: 70-85%（10-100ゲーム）
-- 平均処理時間: 60-70秒/ゲーム
+- 勝率: 70-85%（100ゲーム）
+- 平均処理時間: 60-70秒/ゲーム（SIMULATION_COUNT=700時）
 
-### 提出版のベンチマーク
+**カスタマイズ例**:
 ```bash
-cd src
-python benchmark_full.py  # submission.py の評価
+# ゲーム数を増やす
+python benchmark.py --games 1000
+
+# シミュレーション回数を変更
+python benchmark.py --simulations 500
+
+# GPU使用（CuPy必要）
+python benchmark.py --gpu
+
+# 組み合わせ
+python benchmark.py --games 500 --simulations 700 --gpu
 ```
+
+**注**: 以前の `benchmark_full.py` と `benchmark_gpu.py` は統合され、単一の `benchmark.py` で全機能を提供します。
 
 ---
 
