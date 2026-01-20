@@ -36,20 +36,35 @@
 
 ## 📊 ベンチマーク
 
-### benchmark.py - 標準ベンチマーク（推奨）
+### benchmark.py - 統合ベンチマーク（推奨）⭐
 - **対象**: main.py（80%勝率版）
-- **実行**: `python benchmark.py`
+- **実行**: `python benchmark.py` または `python benchmark.py --help` でオプション表示
 - **期待結果**: 70-85%の勝率
+- **特徴**: コマンドライン引数でカスタマイズ可能
+  - `--games N`: ゲーム数を指定（デフォルト: 100）
+  - `--simulations N`: シミュレーション回数を指定
+  - `--gpu`: GPU使用（CuPy必要）
+  - `--progress-interval N`: 進捗表示の間隔
 
-### benchmark_full.py - 長時間ベンチマーク
-- **対象**: submission.py
-- **実行**: `python benchmark_full.py`
-- **特徴**: より多くのゲーム数でテスト
+**使用例**:
+```bash
+# 標準（100ゲーム）
+python benchmark.py
 
-### benchmark_gpu.py - GPU版ベンチマーク
-- **対象**: main_gpu.py
-- **実行**: `python benchmark_gpu.py`
-- **必要**: GPU環境
+# 1000ゲームでテスト
+python benchmark.py --games 1000
+
+# シミュレーション回数を指定
+python benchmark.py --simulations 500
+
+# GPU使用
+python benchmark.py --gpu
+
+# すべてのオプションを組み合わせ
+python benchmark.py --games 500 --simulations 700 --gpu
+```
+
+**注**: 以前の `benchmark_full.py` と `benchmark_gpu.py` は統合され、`archive/` に移動しました。
 
 ---
 
