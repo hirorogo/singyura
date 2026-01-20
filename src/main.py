@@ -52,6 +52,31 @@ ROLLOUT_SUIT_MULTIPLIER = 1.5  # ロールアウト時のスート集中倍率
 ROLLOUT_HAND_REDUCTION = 0.2  # ロールアウト時の手札削減インセンティブ
 ROLLOUT_CHAIN_MULTIPLIER = 6  # ロールアウト時の連鎖可能性倍率
 
+# 参考コード由来の高度なヒューリスティックパラメータ（戦略を尖らせるための重み）
+ADVANCED_HEURISTIC_PARAMS = {
+    'W_CIRCULAR_DIST': 22,    # 7からの距離（端に近いほど出しにくい）
+    'W_MY_PATH': 112,         # 自分の次の手に繋がるボーナス
+    'W_OTHERS_RISK': -127,    # 他人に塩を送るリスク（深度1あたりの減点）
+    'W_SUIT_DOM': 84,         # スート支配力の重み
+    'W_WIN_DASH': 41,         # 勝ち圏内の放出意欲
+    'P_THRESHOLD_BASE': 118,  # 基本のパスしきい値
+    'P_KILL_ZONE': 170,       # 相手をハメる時のパスしきい値
+    'P_WIN_THRESHOLD': -31,   # 勝ち圏内のパスしきい値
+    # 新戦略パラメータ
+    'W_NECROMANCER': 20.0,    # ネクロマンサー（バースト予知）のボーナス
+    'W_SEVEN_ADJACENT': 5.0,  # 7の信号機：隣接カードがある場合のボーナス
+    'W_SEVEN_NO_ADJ': -5.0,   # 7の信号機：隣接カードがない場合のペナルティ
+}
+
+# 高度なヒューリスティックの有効化フラグと重み
+ENABLE_ADVANCED_HEURISTIC = True  # 参考コード由来の高度な戦略を有効化
+ADVANCED_HEURISTIC_WEIGHT = 0.8   # 高度なヒューリスティックの重み（既存戦略とのバランス）
+
+# 新戦略の有効化フラグ
+ENABLE_NECROMANCER = True    # ネクロマンサー戦略（バースト予知）
+ENABLE_SEVEN_SIGNAL = True   # 7の信号機戦略
+ENABLE_HYPERLOOP_DIST = True # ハイパーループ距離計算
+
 # --- データクラス定義 ---
 
 class Suit(Enum):
@@ -701,6 +726,49 @@ class HybridStrongestAI:
                 action_scores[action] += strategic_bonus[action] * STRATEGY_WEIGHT_MULTIPLIER
 
         best_action = max(action_scores, key=action_scores.get)
+        best_score = action_scores[best_action]
+        
+        # 戦略的パス判断（参考コード由来の高度な戦略）
+        if ENABLE_ADVANCED_HEURISTIC:
+            # 自分のパス回数と相手の状況を分析
+            my_pass_count = state.pass_count[self.my_player_num]
+            my_hands_count = len(state.my_hands())
+            
+            # 相手の状況分析
+            opp_pass_left = [3 - state.pass_count[i] for i in range(len(state.players_cards)) 
+                            if i != self.my_player_num and i not in state.out_player]
+            opp_min_pass = min(opp_pass_left) if opp_pass_left else 3
+            
+            opp_hand_sizes = [len(state.players_cards[i]) for i in range(len(state.players_cards)) 
+                             if i != self.my_player_num and i not in state.out_player]
+            opp_min_hand = min(opp_hand_sizes) if opp_hand_sizes else 13
+            
+            params = ADVANCED_HEURISTIC_PARAMS
+            
+            # 戦略的パスの動的判断
+            pass_threshold = params['P_THRESHOLD_BASE']
+            
+            # 相手のパスが尽きそうな時は、より「出さない」選択を強化
+            if opp_min_pass == 0:
+                pass_threshold = params['P_KILL_ZONE']
+            elif opp_min_pass == 1:
+                pass_threshold = params['P_KILL_ZONE'] * 0.7
+            
+            # 自分のパス残弾が少ない時は、評価が低くても出す（自滅回避）
+            if (3 - my_pass_count) <= 1:
+                pass_threshold = -9999
+            
+            # 自分が勝てそうな時は、変に止めずに流す
+            if my_hands_count <= opp_min_hand and best_score > 0:
+                pass_threshold = params['P_WIN_THRESHOLD']
+            
+            # 評価値がしきい値を下回るなら、戦略的パスを選択
+            # ただし、best_scoreはシミュレーションスコア+戦略ボーナスなので、
+            # 戦略ボーナス部分のみを比較対象とする
+            if best_action in strategic_bonus:
+                strategic_score_only = strategic_bonus[best_action]
+                if strategic_score_only < pass_threshold and my_pass_count < 3:
+                    return None, 1
 
         if best_action is None:
             return None, 1
@@ -974,6 +1042,11 @@ class HybridStrongestAI:
         counting_bonus = self._evaluate_card_counting_strategy(state, tracker, my_hand, my_actions)
         for action, score in counting_bonus.items():
             bonus[action] = bonus.get(action, 0) + score
+        
+        # 新機能：参考コード由来の高度なヒューリスティック戦略
+        advanced_heuristic_bonus = self._evaluate_advanced_heuristic_strategy(state, my_hand, my_actions)
+        for action, score in advanced_heuristic_bonus.items():
+            bonus[action] = bonus.get(action, 0) + (score * ADVANCED_HEURISTIC_WEIGHT)
         
         return bonus
     
@@ -1545,6 +1618,159 @@ class HybridStrongestAI:
                 
                 if score != 0:
                     bonus[action] = score
+        
+        return bonus
+    
+    def _evaluate_advanced_heuristic_strategy(self, state, my_hand, my_actions):
+        """参考コード由来の高度なヒューリスティック戦略
+        
+        提供された参考コードからの戦略を統合:
+        - 円環距離（7からの距離）評価
+        - 深度ベースの開放リスク評価（get_chain_risk）
+        - スート支配力の評価
+        - トンネル端（A/K）の特別処理を強化
+        - 戦略的パス判断（別途実装）
+        
+        参考: 問題文で提供されたmy_AI関数のパラメータ駆動戦略
+        """
+        if not ENABLE_ADVANCED_HEURISTIC:
+            return {}
+        
+        bonus = {}
+        params = ADVANCED_HEURISTIC_PARAMS
+        suit_to_index = {Suit.SPADE: 0, Suit.CLUB: 1, Suit.HEART: 2, Suit.DIAMOND: 3}
+        
+        # 自分の手札をインデックスセットで管理（高速検索用）
+        my_hand_indices = set((suit_to_index[c.suit], c.number.val - 1) for c in my_hand)
+        
+        # 相手の状況分析
+        opp_pass_left = [3 - state.pass_count[i] for i in range(len(state.players_cards)) if i != self.my_player_num]
+        opp_min_pass = min(opp_pass_left) if opp_pass_left else 3
+        opp_min_hand = min(len(h) for i, h in enumerate(state.players_cards) if i != self.my_player_num) if state.players_cards else 13
+        
+        def get_chain_risk(suit_idx, start_num, direction):
+            """指定した方向に、自分が持っていないカードが何枚連続しているか(他人のための道)を計算"""
+            risk_count = 0
+            curr = (start_num + direction) % 13
+            # トンネルがあるので最大6枚まで探索（7の反対側まで）
+            for _ in range(6):
+                if state.field_cards[suit_idx][curr] == 1:  # すでに出ている
+                    break
+                if (suit_idx, curr) in my_hand_indices:  # 自分で止めている
+                    break
+                # 誰かが持っているはずのカード
+                risk_count += 1
+                curr = (curr + direction) % 13
+            return risk_count
+        
+        # 各スートのカード枚数をカウント
+        suit_counts = {Suit.SPADE: 0, Suit.CLUB: 0, Suit.HEART: 0, Suit.DIAMOND: 0}
+        for card in my_hand:
+            suit_counts[card.suit] += 1
+        
+        for card in my_actions:
+            s = card.suit
+            i = suit_to_index[s]
+            n = card.number.val - 1
+            score = 0
+            
+            # 1. ハイパーループ距離計算 (トンネルルートも考慮した最短距離)
+            if ENABLE_HYPERLOOP_DIST:
+                # 通常ルートの距離
+                dist_normal = abs(n - 6)
+                # トンネルルートの距離
+                dist_tunnel = 99
+                # A側（0）またはK側（12）がアクセス可能か確認
+                is_ace_accessible = state.field_cards[i][0] == 1 or (i, 0) in my_hand_indices
+                is_king_accessible = state.field_cards[i][12] == 1 or (i, 12) in my_hand_indices
+                
+                if is_ace_accessible and n < 7:
+                    # A側が使える場合、Aまでの距離+1
+                    dist_tunnel = n + 1
+                elif is_king_accessible and n >= 7:
+                    # K側が使える場合、Kまでの距離+1
+                    dist_tunnel = (12 - n) + 1
+                
+                # 最短ルートを選択（短い方が出やすい→価値が低い）
+                min_dist = min(dist_normal, dist_tunnel)
+                # 距離が短いほど保持価値が低いので、逆にボーナスを付ける
+                circular_dist = min(dist_normal, 13 - dist_normal)
+                score += circular_dist * params['W_CIRCULAR_DIST']
+            else:
+                # 従来の円環距離
+                dist_from_7 = abs(n - 6)
+                circular_dist = min(dist_from_7, 13 - dist_from_7)
+                score += circular_dist * params['W_CIRCULAR_DIST']
+            
+            # 2. 7の信号機戦略
+            if ENABLE_SEVEN_SIGNAL and n == 6:  # 7のインデックスは6
+                # 隣接カード（6 or 8）を持っているか確認
+                has_adjacent = (i, 5) in my_hand_indices or (i, 7) in my_hand_indices
+                if has_adjacent:
+                    score += params['W_SEVEN_ADJACENT']  # 自分に得なら即出し
+                else:
+                    score += params['W_SEVEN_NO_ADJ']    # 自分だけ損なら出し惜しみ
+            
+            # 3. 深度ベースの開放リスクと自己利益
+            # 隣接する2方向（トンネル含む）を確認
+            for direction in [1, -1]:
+                neighbor = (n + direction) % 13
+                # その方向がまだ未開放の場合のみ評価
+                if state.field_cards[i][neighbor] == 0:
+                    if (i, neighbor) in my_hand_indices:
+                        # 自分が持っているなら「自分の道」
+                        score += params['W_MY_PATH']
+                    else:
+                        # 自分が持っていないなら「他人の道」を何枚分開けてしまうか
+                        risk_depth = get_chain_risk(i, n, direction)
+                        score += risk_depth * params['W_OTHERS_RISK']
+            
+            # 3. スート支配 (そのマークを多く持っているなら、そのマークを優先的に進める)
+            same_suit_count = suit_counts[s]
+            score += same_suit_count * params['W_SUIT_DOM']
+            
+            # 4. 終盤・状況補正
+            if len(my_hand) <= opp_min_hand:
+                score += params['W_WIN_DASH']
+            
+            # 特殊ルール補正: トンネルの端（1, 13）を出す際、逆側の状況を見る
+            if n == 0 or n == 12:
+                opposite = 12 if n == 0 else 0
+                if state.field_cards[i][opposite] == 0 and (i, opposite) not in my_hand_indices:
+                    # 逆側のカードを自分が持っていないのにトンネルを開けるのは非常に危険
+                    score -= 50
+            
+            bonus[card] = score
+        
+        # ネクロマンサー戦略（バースト予知）
+        if ENABLE_NECROMANCER:
+            for player in range(state.players_num):
+                if player == self.my_player_num or player in state.out_player:
+                    continue
+                
+                # 相手がもうすぐバーストする（pass_count >= 3）
+                if state.pass_count[player] >= 3:
+                    # 相手がバーストした場合、手札が全て場に出る
+                    # その時に自分が出せるようになるカードの価値を上げる
+                    # ただし、相手の手札は完全には分からないので、推論ベースで評価
+                    
+                    # 簡易実装：相手がバーストしそうな時は、
+                    # 場に繋がるカード（legal_actions）の価値を上げる
+                    # なぜなら、相手がバースト後に場が広がる可能性が高いから
+                    for card in my_actions:
+                        # このカードを出すことで、新たに出せるようになるカードがあるか
+                        # （つまり、場を広げる行動）
+                        card_i = suit_to_index[card.suit]
+                        card_n = card.number.val - 1
+                        
+                        # 隣接する方向で、まだ場に出ていないカードがあれば、
+                        # バースト後にそこが開く可能性がある
+                        for direction in [1, -1]:
+                            neighbor = (card_n + direction) % 13
+                            if state.field_cards[card_i][neighbor] == 0:
+                                # この方向が未開放 = バースト後に繋がる可能性
+                                bonus[card] = bonus.get(card, 0) + params['W_NECROMANCER']
+                                break  # 一度だけボーナス
         
         return bonus
     
