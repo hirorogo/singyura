@@ -260,14 +260,8 @@ ENABLE_ADAPTIVE_ROLLOUT = True          # 適応的ロールアウト
 ### 主要ドキュメント
 - **[QUICKSTART.md](QUICKSTART.md)** - 5分でわかるクイックガイド
 - **[doc/specification.md](doc/specification.md)** - ゲーム仕様・ルール説明
-- **[doc/design_strongest.md](doc/design_strongest.md)** - PIMC法の設計書
-- **[doc/strategy.md](doc/strategy.md)** - AI戦略案
+- **[doc/AI_TACTICS_COMPLETE.md](doc/AI_TACTICS_COMPLETE.md)** - AI戦術・戦略完全ガイド（現在採用版）
 - **[reference/README.md](reference/README.md)** - 参考コードの説明
-
-### 詳細レポート（アーカイブ）
-- **[doc/archive/ai_status_report.md](doc/archive/ai_status_report.md)** - 詳細な分析と改善戦略
-- **[doc/archive/phase1_improvements.md](doc/archive/phase1_improvements.md)** - Phase 1改善の詳細
-- **[doc/archive/SUMMARY_JP.md](doc/archive/SUMMARY_JP.md)** - プロジェクト詳細サマリー
 
 ## 🎓 今後の改善（Phase 2以降）
 

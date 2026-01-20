@@ -8,7 +8,7 @@ singyura/
 ├── 🌟 WHICH_FILE_TO_USE.md             ← 【重要】どのファイルを使うべきか完全ガイド
 ├── 🚀 QUICKSTART.md                     ← 5分で始めるガイド
 ├── 📊 AI_IMPROVEMENT_REPORT_2026_01_20.md ← 80%達成レポート
-├── ✅ VERIFICATION_REPORT.md            ← ベンチマーク検証レポート
+├── 📁 PROJECT_STRUCTURE.md              ← このファイル
 │
 ├── 📂 src/                              ← ソースコード
 │   ├── 📄 README.md                    ← ソースコードの説明
@@ -23,31 +23,41 @@ singyura/
 │       ├── 📄 README.md               ← アーカイブ説明
 │       ├── main_improved.py           ← Phase1/2版（31-40%）
 │       ├── main_simplified.py         ← シンプル版（38-45%）
-│       ├── benchmark_improved.py
-│       ├── benchmark_simplified.py
-│       ├── debug_ai.py
-│       └── debug_legal_actions.py
+│       └── その他デバッグ用ファイル
 │
 ├── 📂 doc/                              ← ドキュメント
+│   ├── ⭐ AI_TACTICS_COMPLETE.md       ← 【重要】AI戦術・戦略完全ガイド（現在採用版）
 │   ├── specification.md                ← ゲーム仕様
-│   ├── design_strongest.md             ← PIMC法の設計
-│   ├── strategy.md                     ← 戦略案
-│   ├── CURRENT_STATUS_ANALYSIS.md      ← 現状分析レポート
-│   ├── STRATEGY_AND_INFERENCE_MODEL_REPORT.md ← 戦略詳細
-│   ├── AI_ENHANCEMENT_2026_01_19.md    ← AI強化レポート
-│   ├── 📂 logs/                        ← 開発ログ
-│   ├── 📂 misc/                        ← その他（Colab notebook等）
-│   └── 📂 archive/                     ← 古いドキュメント
+│   └── 📂 misc/                        ← その他（Colab notebook等）
 │
 ├── 📂 reference/                        ← 参考コード（大会提供）
 │   ├── README.md
 │   ├── base_game_engine.py
 │   └── random_ai.py
 │
-├── 📂 reports_archive/                  ← 過去のレポート
-│   ├── 📄 README.md                    ← アーカイブ説明
-│   ├── PROJECT_COMPLETION_REPORT.md
-│   ├── TASK_COMPLETION_SUMMARY.md
+└── 📂 sankouyou/                        ← 参考資料
+```
+
+---
+
+## 🎯 重要ファイル（優先度順）
+
+### 1. 大会提出用（最優先）⭐⭐⭐
+- **`src/submission.py`** - 80%勝率達成版、大会に提出するファイル
+- **`WHICH_FILE_TO_USE.md`** - 使い方の完全ガイド
+
+### 2. 理解・確認用
+- **`README.md`** - プロジェクト全体の概要
+- **`QUICKSTART.md`** - 5分で始めるガイド
+- **`doc/AI_TACTICS_COMPLETE.md`** - AI戦術・戦略完全ガイド（現在採用版）⭐
+- **`AI_IMPROVEMENT_REPORT_2026_01_20.md`** - 80%達成の詳細レポート
+
+### 3. 開発・テスト用
+- **`src/main.py`** - ローカル開発・テスト用（80%版）
+- **`src/benchmark.py`** - 性能評価
+
+### 4. 技術仕様
+- **`doc/specification.md`** - ゲームルール
 │   ├── FINAL_IMPROVEMENTS_SUMMARY.md
 │   ├── IMPLEMENTATION_SUMMARY.md
 │   └── STRUCTURE.md
