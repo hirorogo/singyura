@@ -11,6 +11,12 @@ Singularityバトルクエスト決勝大会「AI 7並べ (XQ)」用の高度な
 
 **👉 使用すべきファイル**: `src/submission.py` ([詳細ガイド](WHICH_FILE_TO_USE.md))
 
+### 🚀 クイックリンク
+- **[どのファイルを使うべきか](WHICH_FILE_TO_USE.md)** - 完全ガイド
+- **[クイックスタート](QUICKSTART.md)** - 5分で始める
+- **[プロジェクト構造](PROJECT_STRUCTURE.md)** - ディレクトリ構成
+- **[80%達成レポート](AI_IMPROVEMENT_REPORT_2026_01_20.md)** - 詳細レポート
+
 ---
 
 ## 📋 プロジェクト概要
