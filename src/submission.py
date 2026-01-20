@@ -52,8 +52,8 @@ ADVANCED_HEURISTIC_PARAMS = {
     'W_OTHERS_RISK': -127,    # 他人に塩を送るリスク（深度1あたりの減点）
     'W_SUIT_DOM': 84,         # スート支配力の重み
     'W_WIN_DASH': 41,         # 勝ち圏内の放出意欲
-    'P_THRESHOLD_BASE': 118,  # 基本のパスしきい値
-    'P_KILL_ZONE': 170,       # 相手をハメる時のパスしきい値
+    'P_THRESHOLD_BASE': 200,  # 基本のパスしきい値（超高値、PASSをほぼ禁止）
+    'P_KILL_ZONE': 300,       # 相手をハメる時のパスしきい値（超高値）
     'P_WIN_THRESHOLD': -31,   # 勝ち圏内のパスしきい値
     # 新戦略パラメータ
     'W_NECROMANCER': 20.0,    # ネクロマンサー（バースト予知）のボーナス
