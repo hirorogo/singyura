@@ -26,7 +26,7 @@ import random
 import numpy as np
 
 MY_PLAYER_NUM = 0          # 自分のプレイヤー番号
-SIMULATION_COUNT = 400     # シミュレーション回数（強化版：300→400、Colab環境最適化）
+SIMULATION_COUNT = 500     # シミュレーション回数（超強化版：400→500、Colab環境最適化）
 SIMULATION_DEPTH = 250     # シミュレーション深度（強化版：200→250）
 ENABLE_TUNNEL_LOCK = True  # トンネルロック戦略
 ENABLE_BURST_FORCE = True  # バースト誘導戦略

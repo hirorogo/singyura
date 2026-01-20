@@ -31,7 +31,7 @@ import numpy as np
 
 # --- 設定 ---
 MY_PLAYER_NUM = 0          # 自分のプレイヤー番号
-SIMULATION_COUNT = 700     # シミュレーション回数（強化版：700で最強、統計的信頼性最大化）
+SIMULATION_COUNT = 1000    # シミュレーション回数（超強化版：700→1000、最高精度）
 SIMULATION_DEPTH = 350     # シミュレーション深度（強化版）
 ENABLE_TUNNEL_LOCK = True  # トンネルロック戦略
 ENABLE_BURST_FORCE = True  # バースト誘導戦略
