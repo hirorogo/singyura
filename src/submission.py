@@ -54,12 +54,21 @@ ADVANCED_HEURISTIC_PARAMS = {
     'W_WIN_DASH': 41,         # 勝ち圏内の放出意欲
     'P_THRESHOLD_BASE': 118,  # 基本のパスしきい値
     'P_KILL_ZONE': 170,       # 相手をハメる時のパスしきい値
-    'P_WIN_THRESHOLD': -31    # 勝ち圏内のパスしきい値
+    'P_WIN_THRESHOLD': -31,   # 勝ち圏内のパスしきい値
+    # 新戦略パラメータ
+    'W_NECROMANCER': 20.0,    # ネクロマンサー（バースト予知）のボーナス
+    'W_SEVEN_ADJACENT': 5.0,  # 7の信号機：隣接カードがある場合のボーナス
+    'W_SEVEN_NO_ADJ': -5.0,   # 7の信号機：隣接カードがない場合のペナルティ
 }
 
 # 高度なヒューリスティックの有効化フラグと重み
 ENABLE_ADVANCED_HEURISTIC = True  # 参考コード由来の高度な戦略を有効化
 ADVANCED_HEURISTIC_WEIGHT = 0.8   # 高度なヒューリスティックの重み（既存戦略とのバランス）
+
+# 新戦略の有効化フラグ
+ENABLE_NECROMANCER = True    # ネクロマンサー戦略（バースト予知）
+ENABLE_SEVEN_SIGNAL = True   # 7の信号機戦略
+ENABLE_HYPERLOOP_DIST = True # ハイパーループ距離計算
 
 
 # --- 推論器 (相手手札の推論) ---
@@ -351,12 +360,44 @@ class HybridStrongestAI:
             n = card.number.val - 1
             score = 0
             
-            # 1. 基本：円環距離 (端のカードほど保持価値が高い)
-            dist_from_7 = abs(n - 6)
-            circular_dist = min(dist_from_7, 13 - dist_from_7)
-            score += circular_dist * params['W_CIRCULAR_DIST']
+            # 1. ハイパーループ距離計算 (トンネルルートも考慮した最短距離)
+            if ENABLE_HYPERLOOP_DIST:
+                # 通常ルートの距離
+                dist_normal = abs(n - 6)
+                # トンネルルートの距離
+                dist_tunnel = 99
+                # A側（0）またはK側（12）がアクセス可能か確認
+                is_ace_accessible = state.field_cards[i][0] == 1 or (i, 0) in my_hand_indices
+                is_king_accessible = state.field_cards[i][12] == 1 or (i, 12) in my_hand_indices
+                
+                if is_ace_accessible and n < 7:
+                    # A側が使える場合、Aまでの距離+1
+                    dist_tunnel = n + 1
+                elif is_king_accessible and n >= 7:
+                    # K側が使える場合、Kまでの距離+1
+                    dist_tunnel = (12 - n) + 1
+                
+                # 最短ルートを選択（短い方が出やすい→価値が低い）
+                min_dist = min(dist_normal, dist_tunnel)
+                # 距離が短いほど保持価値が低いので、逆にボーナスを付ける
+                circular_dist = min(dist_normal, 13 - dist_normal)
+                score += circular_dist * params['W_CIRCULAR_DIST']
+            else:
+                # 従来の円環距離
+                dist_from_7 = abs(n - 6)
+                circular_dist = min(dist_from_7, 13 - dist_from_7)
+                score += circular_dist * params['W_CIRCULAR_DIST']
             
-            # 2. 深度ベースの開放リスクと自己利益
+            # 2. 7の信号機戦略
+            if ENABLE_SEVEN_SIGNAL and n == 6:  # 7のインデックスは6
+                # 隣接カード（6 or 8）を持っているか確認
+                has_adjacent = (i, 5) in my_hand_indices or (i, 7) in my_hand_indices
+                if has_adjacent:
+                    score += params['W_SEVEN_ADJACENT']  # 自分に得なら即出し
+                else:
+                    score += params['W_SEVEN_NO_ADJ']    # 自分だけ損なら出し惜しみ
+            
+            # 3. 深度ベースの開放リスクと自己利益
             # 隣接する2方向（トンネル含む）を確認
             for direction in [1, -1]:
                 neighbor = (n + direction) % 13
@@ -386,6 +427,30 @@ class HybridStrongestAI:
                     score -= 50
             
             bonus[card] = score
+        
+        # ネクロマンサー戦略（バースト予知）
+        if ENABLE_NECROMANCER:
+            for player in range(state.players_num):
+                if player == self.my_player_num or player in state.out_player:
+                    continue
+                
+                # 相手がもうすぐバーストする（pass_count >= 3）
+                if state.pass_count[player] >= 3:
+                    # 相手がバーストした場合、手札が全て場に出る
+                    # その時に自分が出せるようになるカードの価値を上げる
+                    for card in my_actions:
+                        # このカードを出すことで、新たに出せるようになるカードがあるか
+                        card_i = suit_to_index[card.suit]
+                        card_n = card.number.val - 1
+                        
+                        # 隣接する方向で、まだ場に出ていないカードがあれば、
+                        # バースト後にそこが開く可能性がある
+                        for direction in [1, -1]:
+                            neighbor = (card_n + direction) % 13
+                            if state.field_cards[card_i][neighbor] == 0:
+                                # この方向が未開放 = バースト後に繋がる可能性
+                                bonus[card] = bonus.get(card, 0) + params['W_NECROMANCER']
+                                break  # 一度だけボーナス
         
         return bonus
 

@@ -1,23 +1,41 @@
 import time
 import sys
 
+# GPU使用フラグ（簡単にON/OFFできるように）
+USE_GPU = True
+
 # GPU対応版のベンチマーク
 print("="*50)
-print("GPU対応版のベンチマーク")
+print("ベンチマーク実行")
+print(f"GPU使用: {USE_GPU}")
 print("="*50)
 
-from main_gpu import State, GPUAcceleratedAI, MY_PLAYER_NUM, random_action, SIMULATION_COUNT, GPU_AVAILABLE, GPU_TYPE
+# GPU使用時はCuPyをインポート、不使用時はNumPyのまま
+if USE_GPU:
+    try:
+        import cupy as xp
+        GPU_AVAILABLE = True
+        print("CuPy検出: GPU高速化を有効化")
+    except ImportError:
+        import numpy as xp
+        GPU_AVAILABLE = False
+        print("警告: CuPyが見つかりません。NumPyを使用します")
+else:
+    import numpy as xp
+    GPU_AVAILABLE = False
+    print("GPU無効化: NumPyを使用")
+
+from main import State, HybridStrongestAI, MY_PLAYER_NUM, random_action, SIMULATION_COUNT
 
 def run_benchmark(game_count=100):
     wins = [0] * 3
     ai_pos = 0  # AI is Player 0
     
     # Initialize AI
-    my_ai = GPUAcceleratedAI(my_player_num=ai_pos, simulation_count=SIMULATION_COUNT)
+    my_ai = HybridStrongestAI(my_player_num=ai_pos, simulation_count=SIMULATION_COUNT)
     
-    print(f"Running benchmark with {game_count} games")
-    print(f"GPU Available: {GPU_AVAILABLE} ({GPU_TYPE})")
-    print(f"Simulation count: {SIMULATION_COUNT}")
+    print(f"\n{game_count}ゲームでベンチマーク実行")
+    print(f"シミュレーション回数: {SIMULATION_COUNT}")
 
     start_time = time.time()
     
