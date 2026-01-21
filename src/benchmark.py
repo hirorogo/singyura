@@ -120,6 +120,9 @@ def run_benchmark(game_count, simulation_count=None, use_gpu=False, progress_int
     start_time = time.time()
     
     for i in range(game_count):
+        # ゲーム開始前に次のゲームの準備（trial_weightsを生成）
+        my_ai.prepare_next_game()
+        
         state = State()
         
         while not state.is_done():

@@ -539,6 +539,11 @@ class OpponentModel:
     # クラス変数（永続的記憶） - 試合をまたいで保持される
     _persistent_opponent_data = {}  # プレイヤーIDごとの統計データ
     _game_count = 0  # 総試合数
+    
+    # 定数
+    MOVING_AVERAGE_ALPHA = 0.3  # 移動平均の係数（新しい情報の重み）
+    PASS_RATE_THRESHOLD = 0.2  # パス率の閾値（これを超えるとburst_force）
+    ACE_KING_RATE_THRESHOLD = 0.3  # A/K即出し率の閾値（これを超えるとtunnel_lock）
 
     def __init__(self, players_num):
         self.players_num = players_num
@@ -618,11 +623,12 @@ class OpponentModel:
         
         # 今回のゲームでの統計
         current_pass_rate = flags["pass_count"] / total_turns
-        current_ace_king_rate = flags["end_cards"] / max(1, flags["total_actions"])
-        current_tunnel_rate = flags["tunnel_usage"] / max(1, flags["total_actions"])
+        safe_total_actions = max(1, flags["total_actions"])
+        current_ace_king_rate = flags["end_cards"] / safe_total_actions
+        current_tunnel_rate = flags["tunnel_usage"] / safe_total_actions
         
-        # 移動平均で更新（alpha = 0.3: 新しい情報を30%反映）
-        alpha = 0.3
+        # 移動平均で更新
+        alpha = OpponentModel.MOVING_AVERAGE_ALPHA
         persistent['pass_rate'] = (1 - alpha) * persistent['pass_rate'] + alpha * current_pass_rate
         persistent['ace_king_immediate_rate'] = (1 - alpha) * persistent['ace_king_immediate_rate'] + alpha * current_ace_king_rate
         persistent['tunnel_usage_rate'] = (1 - alpha) * persistent['tunnel_usage_rate'] + alpha * current_tunnel_rate
@@ -653,8 +659,8 @@ class OpponentModel:
         if persistent and persistent['game_count'] > 0:
             # 永続データから傾向を判定（重み付き）
             # 今回のゲームの傾向を70%、永続データを30%で評価
-            persistent_pass_tendency = persistent['pass_rate'] > 0.2
-            persistent_ace_king_tendency = persistent['ace_king_immediate_rate'] > 0.3
+            persistent_pass_tendency = persistent['pass_rate'] > OpponentModel.PASS_RATE_THRESHOLD
+            persistent_ace_king_tendency = persistent['ace_king_immediate_rate'] > OpponentModel.ACE_KING_RATE_THRESHOLD
             
             if persistent_pass_tendency and pass_count >= 1:
                 return "burst_force"
@@ -710,9 +716,12 @@ class HybridStrongestAI:
     # クラス変数（永続的記憶） - 試合をまたいで保持される
     _best_weights = None  # 最良の重みパラメータ
     _trial_weights = None  # 試行用の重みパラメータ（best_weights + ノイズ）
-    _game_results = []  # ゲーム結果の履歴
+    _game_results = []  # ゲーム結果の履歴（直近100試合のみ保持）
     _total_games = 0  # 総ゲーム数
     _wins = 0  # 勝利数
+    
+    # 定数
+    MAX_GAME_RESULTS_HISTORY = 100  # 結果履歴の最大保持数
     
     def __init__(self, my_player_num, simulation_count=50):
         self.my_player_num = my_player_num
@@ -725,7 +734,7 @@ class HybridStrongestAI:
         # 初回のみ重みを初期化
         if HybridStrongestAI._best_weights is None:
             HybridStrongestAI._best_weights = self._initialize_weights()
-            HybridStrongestAI._trial_weights = copy.copy(HybridStrongestAI._best_weights)
+            HybridStrongestAI._trial_weights = self._initialize_weights()  # 初回は同じ値
     
     def _initialize_weights(self):
         """重みパラメータの初期化"""
@@ -750,8 +759,9 @@ class HybridStrongestAI:
         
         trial = {}
         for key, value in HybridStrongestAI._best_weights.items():
-            # ガウシアンノイズを加える
-            noise = random.gauss(0, WEIGHT_NOISE_STDDEV) * abs(value)
+            # ガウシアンノイズを加える（値がゼロでも最小ノイズを保証）
+            noise_scale = max(abs(value), 10.0)  # 最小スケール10.0
+            noise = random.gauss(0, WEIGHT_NOISE_STDDEV) * noise_scale
             trial[key] = value + noise
         return trial
     
@@ -764,8 +774,10 @@ class HybridStrongestAI:
         if won:
             HybridStrongestAI._wins += 1
         
-        # ゲーム結果を記録
+        # ゲーム結果を記録（直近100試合のみ保持）
         HybridStrongestAI._game_results.append(1 if won else 0)
+        if len(HybridStrongestAI._game_results) > HybridStrongestAI.MAX_GAME_RESULTS_HISTORY:
+            HybridStrongestAI._game_results.pop(0)
         
         # 勝利した場合、trial_weightsの方向にbest_weightsを更新
         if won:
@@ -775,15 +787,18 @@ class HybridStrongestAI:
                 # 学習率を使って更新（trial_weightsの方向に少し移動）
                 HybridStrongestAI._best_weights[key] = best + LEARNING_RATE * (trial - best)
         
-        # 次のゲームのためにtrial_weightsを生成
-        HybridStrongestAI._trial_weights = self._generate_trial_weights()
-        
         # 10ゲームごとに統計を表示
         if HybridStrongestAI._total_games % 10 == 0:
             win_rate = HybridStrongestAI._wins / HybridStrongestAI._total_games
-            recent_win_rate = sum(HybridStrongestAI._game_results[-10:]) / min(10, len(HybridStrongestAI._game_results))
+            recent_games = min(10, len(HybridStrongestAI._game_results))
+            recent_win_rate = sum(HybridStrongestAI._game_results[-recent_games:]) / recent_games
             print(f"[Learning] Games: {HybridStrongestAI._total_games}, "
-                  f"Overall Win Rate: {win_rate:.2%}, Recent Win Rate (last 10): {recent_win_rate:.2%}")
+                  f"Overall Win Rate: {win_rate:.2%}, Recent Win Rate (last {recent_games}): {recent_win_rate:.2%}")
+    
+    def prepare_next_game(self):
+        """次のゲームの準備（trial_weightsを生成）"""
+        if ENABLE_ONLINE_LEARNING:
+            HybridStrongestAI._trial_weights = self._generate_trial_weights()
     
     def get_current_weights(self):
         """現在使用中の重み（trial_weights）を取得"""
