@@ -150,6 +150,17 @@ def run_benchmark(game_count, simulation_count=None, use_gpu=False, progress_int
 
         if winner != -1:
             wins[winner] += 1
+        
+        # ゲーム終了後の学習処理
+        # 1. 相手プロファイリングの更新（永続的記憶）
+        if my_ai._opponent_model:
+            for p in range(state.players_num):
+                if p != ai_pos:
+                    my_ai._opponent_model.update_persistent_stats(p)
+        
+        # 2. オンライン学習（重みの更新）
+        won = (winner == ai_pos)
+        my_ai.update_weights_after_game(won)
             
         # 進捗表示
         if (i + 1) % progress_interval == 0:
