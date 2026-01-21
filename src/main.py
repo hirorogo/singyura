@@ -68,6 +68,11 @@ ADVANCED_HEURISTIC_PARAMS = {
     'W_SEVEN_NO_ADJ': -5.0,   # 7の信号機：隣接カードがない場合のペナルティ
 }
 
+# オンライン学習のパラメータ
+LEARNING_RATE = 0.05  # 学習率（重み更新の速度）
+WEIGHT_NOISE_STDDEV = 0.1  # 重みに加えるノイズの標準偏差
+ENABLE_ONLINE_LEARNING = True  # オンライン学習を有効化
+
 # 高度なヒューリスティックの有効化フラグと重み
 ENABLE_ADVANCED_HEURISTIC = True  # 参考コード由来の高度な戦略を有効化
 ADVANCED_HEURISTIC_WEIGHT = 0.8   # 高度なヒューリスティックの重み（既存戦略とのバランス）
@@ -522,16 +527,27 @@ class State:
 # --- 最強AI実装 (Hybrid: Rule-Based + PIMC + Inference) ---
 
 class OpponentModel:
-    """strategy.md の相手タイプ推定（強化版）。
+    """strategy.md の相手タイプ推定（強化版 + 永続的記憶）。
     
     各プレイヤーの行動パターンを分析し、戦略モードを判定する。
     - Aggressive（トンネル活用型）: A/Kなどの端を積極的に出す
     - Blocker（遅延・ハメ型）: パスを多用、中央付近を止める
+    
+    永続的記憶：試合をまたいでプレイヤーの傾向を記憶する
     """
+    
+    # クラス変数（永続的記憶） - 試合をまたいで保持される
+    _persistent_opponent_data = {}  # プレイヤーIDごとの統計データ
+    _game_count = 0  # 総試合数
+    
+    # 定数
+    MOVING_AVERAGE_ALPHA = 0.3  # 移動平均の係数（新しい情報の重み）
+    PASS_RATE_THRESHOLD = 0.2  # パス率の閾値（これを超えるとburst_force）
+    ACE_KING_RATE_THRESHOLD = 0.3  # A/K即出し率の閾値（これを超えるとtunnel_lock）
 
     def __init__(self, players_num):
         self.players_num = players_num
-        # 各プレイヤーの特徴フラグ
+        # 各プレイヤーの特徴フラグ（このゲーム内のみ）
         self.flags = {p: {
             "aggressive": 0,
             "blocker": 0,
@@ -539,10 +555,21 @@ class OpponentModel:
             "pass_count": 0,     # パス回数
             "end_cards": 0,      # 端カード（A/K）を出した回数
             "middle_cards": 0,   # 中央カード（6/8）を出した回数
+            "total_actions": 0,  # 総行動回数（パス以外）
         } for p in range(players_num)}
         
         # ゲーム進行度（ターン数）
         self.turn_count = 0
+        
+        # 永続データの初期化（まだない場合）
+        for p in range(players_num):
+            if p not in OpponentModel._persistent_opponent_data:
+                OpponentModel._persistent_opponent_data[p] = {
+                    'pass_rate': 0.0,  # パス使用率（移動平均）
+                    'ace_king_immediate_rate': 0.0,  # A/K即出し率（移動平均）
+                    'tunnel_usage_rate': 0.0,  # トンネル使用率（移動平均）
+                    'game_count': 0,  # このプレイヤーとの対戦回数
+                }
 
     def observe(self, state, player, action, pass_flag):
         """行動観測で相手タイプを更新"""
@@ -555,6 +582,9 @@ class OpponentModel:
 
         if action is None or isinstance(action, list):
             return
+
+        # 行動をカウント
+        self.flags[player]["total_actions"] += 1
 
         # A/K を出した → aggressive, トンネル活用
         if action.number in (Number.ACE, Number.KING):
@@ -580,6 +610,35 @@ class OpponentModel:
         # J/Qあたりを出した → blocker 傾向
         if action.number in (Number.JACK, Number.QUEEN):
             self.flags[player]["blocker"] += 1
+    
+    def update_persistent_stats(self, player):
+        """ゲーム終了時に永続データを更新（移動平均）"""
+        flags = self.flags[player]
+        persistent = OpponentModel._persistent_opponent_data[player]
+        
+        # 総行動数（パス + 実際の行動）
+        total_turns = flags["pass_count"] + flags["total_actions"]
+        if total_turns == 0:
+            return
+        
+        # 今回のゲームでの統計
+        current_pass_rate = flags["pass_count"] / total_turns
+        safe_total_actions = max(1, flags["total_actions"])
+        current_ace_king_rate = flags["end_cards"] / safe_total_actions
+        current_tunnel_rate = flags["tunnel_usage"] / safe_total_actions
+        
+        # 移動平均で更新
+        alpha = OpponentModel.MOVING_AVERAGE_ALPHA
+        persistent['pass_rate'] = (1 - alpha) * persistent['pass_rate'] + alpha * current_pass_rate
+        persistent['ace_king_immediate_rate'] = (1 - alpha) * persistent['ace_king_immediate_rate'] + alpha * current_ace_king_rate
+        persistent['tunnel_usage_rate'] = (1 - alpha) * persistent['tunnel_usage_rate'] + alpha * current_tunnel_rate
+        persistent['game_count'] += 1
+    
+    def get_persistent_stats(self, player):
+        """プレイヤーの永続統計を取得"""
+        if player in OpponentModel._persistent_opponent_data:
+            return OpponentModel._persistent_opponent_data[player]
+        return None
 
     def mode(self, player):
         """プレイヤーの戦略モードを判定
@@ -594,6 +653,19 @@ class OpponentModel:
         b = flags["blocker"]
         pass_count = flags["pass_count"]
         tunnel_usage = flags["tunnel_usage"]
+        
+        # 永続統計も考慮（過去の試合からの学習）
+        persistent = self.get_persistent_stats(player)
+        if persistent and persistent['game_count'] > 0:
+            # 永続データから傾向を判定（重み付き）
+            # 今回のゲームの傾向を70%、永続データを30%で評価
+            persistent_pass_tendency = persistent['pass_rate'] > OpponentModel.PASS_RATE_THRESHOLD
+            persistent_ace_king_tendency = persistent['ace_king_immediate_rate'] > OpponentModel.ACE_KING_RATE_THRESHOLD
+            
+            if persistent_pass_tendency and pass_count >= 1:
+                return "burst_force"
+            if persistent_ace_king_tendency and tunnel_usage >= 1:
+                return "tunnel_lock"
         
         # パス回数が多い（2回以上）→ バースト誘導が有効
         if pass_count >= 2:
@@ -613,6 +685,7 @@ class OpponentModel:
         """プレイヤーの脅威度を計算（0.0～1.0）
         
         高いほど優先的に対策すべき相手
+        永続統計も加味して判定
         """
         flags = self.flags[player]
         
@@ -628,10 +701,28 @@ class OpponentModel:
         # パスが多い相手は脅威度低め（詰まりやすい）
         threat -= flags["pass_count"] * 0.1
         
+        # 永続統計からの補正
+        persistent = self.get_persistent_stats(player)
+        if persistent and persistent['game_count'] > 0:
+            # パス率が低い（スムーズに出せる）相手は脅威
+            threat += (1.0 - persistent['pass_rate']) * 0.15
+            # A/K即出し率が高い相手は脅威
+            threat += persistent['ace_king_immediate_rate'] * 0.2
+        
         return max(0.0, min(1.0, threat))
 
 
 class HybridStrongestAI:
+    # クラス変数（永続的記憶） - 試合をまたいで保持される
+    _best_weights = None  # 最良の重みパラメータ
+    _trial_weights = None  # 試行用の重みパラメータ（best_weights + ノイズ）
+    _game_results = []  # ゲーム結果の履歴（直近100試合のみ保持）
+    _total_games = 0  # 総ゲーム数
+    _wins = 0  # 勝利数
+    
+    # 定数
+    MAX_GAME_RESULTS_HISTORY = 100  # 結果履歴の最大保持数
+    
     def __init__(self, my_player_num, simulation_count=50):
         self.my_player_num = my_player_num
         self.simulation_count = simulation_count
@@ -639,6 +730,81 @@ class HybridStrongestAI:
         self._opponent_model = None
         # シミュレーション内で再帰的にPIMCを呼ばないためのガード
         self._in_simulation = False
+        
+        # 初回のみ重みを初期化
+        if HybridStrongestAI._best_weights is None:
+            HybridStrongestAI._best_weights = self._initialize_weights()
+            HybridStrongestAI._trial_weights = self._initialize_weights()  # 初回は同じ値
+    
+    def _initialize_weights(self):
+        """重みパラメータの初期化"""
+        return {
+            'W_CIRCULAR_DIST': 22,
+            'W_MY_PATH': 112,
+            'W_OTHERS_RISK': -127,
+            'W_SUIT_DOM': 84,
+            'W_WIN_DASH': 41,
+            'P_THRESHOLD_BASE': 200,
+            'P_KILL_ZONE': 300,
+            'P_WIN_THRESHOLD': -31,
+            'W_NECROMANCER': 20.0,
+            'W_SEVEN_ADJACENT': 5.0,
+            'W_SEVEN_NO_ADJ': -5.0,
+        }
+    
+    def _generate_trial_weights(self):
+        """best_weightsにノイズを加えてtrial_weightsを生成"""
+        if not ENABLE_ONLINE_LEARNING:
+            return HybridStrongestAI._best_weights
+        
+        trial = {}
+        for key, value in HybridStrongestAI._best_weights.items():
+            # ガウシアンノイズを加える（値がゼロでも最小ノイズを保証）
+            noise_scale = max(abs(value), 10.0)  # 最小スケール10.0
+            noise = random.gauss(0, WEIGHT_NOISE_STDDEV) * noise_scale
+            trial[key] = value + noise
+        return trial
+    
+    def update_weights_after_game(self, won):
+        """ゲーム終了後に重みを更新（オンライン学習）"""
+        if not ENABLE_ONLINE_LEARNING:
+            return
+        
+        HybridStrongestAI._total_games += 1
+        if won:
+            HybridStrongestAI._wins += 1
+        
+        # ゲーム結果を記録（直近100試合のみ保持）
+        HybridStrongestAI._game_results.append(1 if won else 0)
+        if len(HybridStrongestAI._game_results) > HybridStrongestAI.MAX_GAME_RESULTS_HISTORY:
+            HybridStrongestAI._game_results.pop(0)
+        
+        # 勝利した場合、trial_weightsの方向にbest_weightsを更新
+        if won:
+            for key in HybridStrongestAI._best_weights:
+                best = HybridStrongestAI._best_weights[key]
+                trial = HybridStrongestAI._trial_weights[key]
+                # 学習率を使って更新（trial_weightsの方向に少し移動）
+                HybridStrongestAI._best_weights[key] = best + LEARNING_RATE * (trial - best)
+        
+        # 10ゲームごとに統計を表示
+        if HybridStrongestAI._total_games % 10 == 0:
+            win_rate = HybridStrongestAI._wins / HybridStrongestAI._total_games
+            recent_games = min(10, len(HybridStrongestAI._game_results))
+            recent_win_rate = sum(HybridStrongestAI._game_results[-recent_games:]) / recent_games
+            print(f"[Learning] Games: {HybridStrongestAI._total_games}, "
+                  f"Overall Win Rate: {win_rate:.2%}, Recent Win Rate (last {recent_games}): {recent_win_rate:.2%}")
+    
+    def prepare_next_game(self):
+        """次のゲームの準備（trial_weightsを生成）"""
+        if ENABLE_ONLINE_LEARNING:
+            HybridStrongestAI._trial_weights = self._generate_trial_weights()
+    
+    def get_current_weights(self):
+        """現在使用中の重み（trial_weights）を取得"""
+        if ENABLE_ONLINE_LEARNING:
+            return HybridStrongestAI._trial_weights
+        return ADVANCED_HEURISTIC_PARAMS
 
     def get_action(self, state):
         # シミュレーション中は軽量なロールアウトポリシーで打つ（AI同士前提でも無限再帰を防ぐ）
@@ -743,7 +909,7 @@ class HybridStrongestAI:
                              if i != self.my_player_num and i not in state.out_player]
             opp_min_hand = min(opp_hand_sizes) if opp_hand_sizes else 13
             
-            params = ADVANCED_HEURISTIC_PARAMS
+            params = self.get_current_weights()
             
             # 戦略的パスの動的判断
             pass_threshold = params['P_THRESHOLD_BASE']
@@ -1637,7 +1803,7 @@ class HybridStrongestAI:
             return {}
         
         bonus = {}
-        params = ADVANCED_HEURISTIC_PARAMS
+        params = self.get_current_weights()
         suit_to_index = {Suit.SPADE: 0, Suit.CLUB: 1, Suit.HEART: 2, Suit.DIAMOND: 3}
         
         # 自分の手札をインデックスセットで管理（高速検索用）
@@ -2058,6 +2224,18 @@ if __name__ == "__main__":
                     winner = remaining[0]
             
             print(f"* 勝者 プレイヤー {winner} 番")
+            
+            # ゲーム終了後の学習処理
+            # 1. 相手プロファイリングの更新（永続的記憶）
+            if ai_instance._opponent_model:
+                for p in range(state.players_num):
+                    if p != MY_PLAYER_NUM:
+                        ai_instance._opponent_model.update_persistent_stats(p)
+            
+            # 2. オンライン学習（重みの更新）
+            won = (winner == MY_PLAYER_NUM)
+            ai_instance.update_weights_after_game(won)
+            
             break
 
         print(f"------------ ターン {turn} (Player {current_player}) ------------")
