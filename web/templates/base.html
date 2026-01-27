@@ -1,0 +1,62 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{% block title %}七並べAI - Singyura{% endblock %}</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+</head>
+<body>
+    <!-- ナビゲーションバー -->
+    <nav class="navbar">
+        <div class="container">
+            <div class="nav-brand">
+                <h1>七並べAI - Singyura</h1>
+            </div>
+            <ul class="nav-menu">
+                <li><a href="{{ url_for('index') }}">ホーム</a></li>
+                <li><a href="{{ url_for('guide') }}">導入ガイド</a></li>
+                <li><a href="{{ url_for('faq') }}">FAQ</a></li>
+                <li><a href="{{ url_for('pricing') }}">料金</a></li>
+                <li><a href="{{ url_for('support') }}">サポート</a></li>
+                <li><a href="{{ url_for('specification') }}">仕様書</a></li>
+            </ul>
+        </div>
+    </nav>
+
+    <!-- ExoClick広告エリア（トップバナー） -->
+    {% if exoclick_zone_id and exoclick_zone_id != 'YOUR_ZONE_ID_HERE' %}
+    <div class="ad-banner-top">
+        <script type="application/javascript" 
+                data-idzone="{{ exoclick_zone_id }}" 
+                src="https://a.exoclick.com/tag_gen.js">
+        </script>
+    </div>
+    {% endif %}
+
+    <!-- メインコンテンツ -->
+    <main class="container">
+        {% block content %}{% endblock %}
+    </main>
+
+    <!-- ExoClick広告エリア（サイドバー） -->
+    {% if exoclick_zone_id and exoclick_zone_id != 'YOUR_ZONE_ID_HERE' %}
+    <aside class="ad-sidebar">
+        <script type="application/javascript" 
+                data-idzone="{{ exoclick_zone_id }}" 
+                src="https://a.exoclick.com/tag_gen.js">
+        </script>
+    </aside>
+    {% endif %}
+
+    <!-- フッター -->
+    <footer class="footer">
+        <div class="container">
+            <p>&copy; 2026 Singyura - 七並べAI. All rights reserved.</p>
+            <p>Powered by PIMC Algorithm</p>
+        </div>
+    </footer>
+
+    <script src="{{ url_for('static', filename='js/main.js') }}"></script>
+</body>
+</html>

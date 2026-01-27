@@ -1,0 +1,406 @@
+{% extends "base.html" %}
+
+{% block title %}技術仕様書 - 七並べAI{% endblock %}
+
+{% block content %}
+<div class="page-header">
+    <h1>📄 技術仕様書</h1>
+    <p>七並べAI (Singyura) - リバースエンジニアリング完全版</p>
+</div>
+
+<section class="spec-section">
+    <h2>1. ゲーム概要</h2>
+    
+    <table class="spec-table">
+        <tr>
+            <th>項目</th>
+            <th>詳細</th>
+        </tr>
+        <tr>
+            <td>ゲーム名</td>
+            <td>7並べ (Sevens/Dominos) - トンネルルール採用</td>
+        </tr>
+        <tr>
+            <td>形式</td>
+            <td>3人対戦 競技型カードゲーム</td>
+        </tr>
+        <tr>
+            <td>使用カード</td>
+            <td>52枚（4スーツ × 13ランク: A-K）</td>
+        </tr>
+        <tr>
+            <td>勝利条件</td>
+            <td>手札を最も早く使い切る、または最後まで生き残る</td>
+        </tr>
+    </table>
+</section>
+
+<section class="spec-section">
+    <h2>2. ゲームルール</h2>
+    
+    <div class="rules-grid">
+        <div class="rule-card">
+            <h3>初期配置</h3>
+            <p>52枚を3人に均等配布（各約17枚）。全ての7を自動的に場に配置。</p>
+        </div>
+        
+        <div class="rule-card">
+            <h3>合法手</h3>
+            <p>場のカードに隣接するカード（同スートで±1）のみプレイ可能。A→6または8→Kの範囲。</p>
+        </div>
+        
+        <div class="rule-card">
+            <h3>トンネルルール</h3>
+            <p><strong>Aが出された場合</strong>: そのスートはKからのみ延長可能<br>
+               <strong>Kが出された場合</strong>: そのスートはAからのみ延長可能<br>
+               <strong>A・K両方出た場合</strong>: 両側から延長可能</p>
+        </div>
+        
+        <div class="rule-card">
+            <h3>パス制限</h3>
+            <p>各プレイヤー3回までパス可能。4回目のパスで<strong>バースト</strong>（失格）。手札は全て場に出される。</p>
+        </div>
+    </div>
+</section>
+
+<section class="spec-section">
+    <h2>3. コアクラス・データ構造</h2>
+    
+    <h3>カードシステム</h3>
+    <pre><code class="language-python"># Enum定義
+Suit: ♠ SPADE, ♣ CLUB, ♡ HEART, ♢ DIAMOND
+Number: ACE(1) → KING(13)
+
+# クラス
+Card(suit, number)  # 不変カードオブジェクト
+Hand(list)          # 手札管理（check(), choice()メソッド）
+Deck()              # 52枚デッキ（shuffle, dealメソッド）</code></pre>
+    
+    <h3>ゲーム状態</h3>
+    <pre><code class="language-python">class State:
+    players_num: int = 3              # プレイヤー数
+    field_cards: np.array(4×13)       # 場の状態 [0=未出, 1=出た]
+    players_cards: List[Hand]         # 各プレイヤーの手札
+    turn_player: int                  # 現在のプレイヤー
+    pass_count: List[int]             # 各プレイヤーのパス回数
+    out_player: List[int]             # 失格プレイヤー
+    history: List[(player, action, pass_flag)]  # 履歴
+    
+    # 重要メソッド
+    legal_actions()    # プレイ可能カード（トンネルルール適用）
+    next(action, pass_flag)  # 状態遷移
+    clone()            # シミュレーション用コピー
+    is_done()          # ゲーム終了判定</code></pre>
+</section>
+
+<section class="spec-section">
+    <h2>4. 推論エンジン (CardTracker)</h2>
+    
+    <div class="inference-info">
+        <h3>目的</h3>
+        <p>対戦相手の手札構成を確率的に推論</p>
+        
+        <h3>データ構造</h3>
+        <pre><code class="language-python">possible[p]: Set[Card]  # プレイヤーpが保持しうるカード集合</code></pre>
+        
+        <h3>推論ロジック</h3>
+        <ol>
+            <li><strong>場の観測</strong>: 場に出たカードは全プレイヤーから除外</li>
+            <li><strong>パスの観測</strong>: パスした場合 → legal_actions()のカードを持たないと推定</li>
+            <li><strong>プレイの観測</strong>: カードがプレイされた → 全プレイヤーから除去</li>
+        </ol>
+        
+        <h3>重み付け計算</h3>
+        <pre><code class="language-python">pass_weight(player) = max(0.5, 1.0 - (pass_count / 4.0) * 0.5)
+# パス回数が多いほど重みが低い（手札が弱い可能性）</code></pre>
+    </div>
+</section>
+
+<section class="spec-section">
+    <h2>5. AIアルゴリズム: Hybrid Strongest AI</h2>
+    
+    <div class="ai-architecture">
+        <h3>アーキテクチャ</h3>
+        <p><strong>3フェーズハイブリッドシステム</strong></p>
+        <p><strong>手法</strong>: Perfect Information Monte Carlo (PIMC) + ルールベースヒューリスティック + 対戦相手モデリング</p>
+        
+        <h3>Phase 1: 推論制約付き確定化</h3>
+        <pre><code>入力: 部分情報状態 + CardTracker推論結果
+処理:
+  1. 未知カードプールを構築
+  2. CardTracker制約を満たすようにシャッフル
+  3. 推論可能性集合を尊重して配布
+出力: 完全情報確定化状態</code></pre>
+        <p><strong>試行回数</strong>: 120回リトライ（制約違反時）</p>
+        
+        <h3>Phase 2: PIMCシミュレーションループ</h3>
+        <pre><code>各候補手について:
+  SIMULATION_COUNT = 1000回:
+    1. 制約付き確定化
+    2. 候補手を実行
+    3. ゲーム終了までプレイアウト（Phase 3）
+    4. スコア: 勝ち+2, 負け-1, 段階評価±0.3
+  平均スコア → 最良手を選択</code></pre>
+        
+        <h3>Phase 3: ロールアウトポリシー（プレイアウト）</h3>
+        <p><strong>目的</strong>: 現在の状態からゲーム終了まで高速シミュレーション</p>
+        <p><strong>深度</strong>: 350手先まで</p>
+        <p><strong>戦略</strong>: 軽量ヒューリスティックベースの行動選択</p>
+        <pre><code class="language-python">各手のスコア:
+  + A/Kボーナス: 10
+  + 場の隣接カード: 6
+  - 場の隣接カード欠如: -6
+  + セーフムーブ（次札を保持）: 12
+  + スート集中: ×2.0
+  + 手札削減: 0.3 per card
+  + チェーンポテンシャル: ×8</code></pre>
+    </div>
+</section>
+
+<section class="spec-section">
+    <h2>6. 戦略評価レイヤー</h2>
+    
+    <h3>レイヤー1: トンネルロック戦略</h3>
+    <p>トンネルルートを封鎖して対戦相手を妨害:</p>
+    <ul>
+        <li>対戦相手がAを出した場合、Kを保留（圧倒的に有利でない限り）</li>
+        <li>対戦相手がKを出した場合、Aを保留</li>
+        <li><strong>ボーナス</strong>: 手札分布に応じて±10ポイント</li>
+    </ul>
+    
+    <h3>レイヤー2: バースト強制戦略</h3>
+    <p>パス回数が多い脆弱な対戦相手を利用:</p>
+    <ul>
+        <li>対戦相手がプレイできないスートを特定</li>
+        <li>弱いスートを進めてパスを強制</li>
+        <li><strong>ボーナス</strong>: パス回数 × 5ポイント</li>
+    </ul>
+    
+    <h3>レイヤー3: 高度ヒューリスティック</h3>
+    <table class="params-table">
+        <tr>
+            <th>パラメータ</th>
+            <th>値</th>
+            <th>説明</th>
+        </tr>
+        <tr>
+            <td>W_CIRCULAR_DIST</td>
+            <td>22</td>
+            <td>7からの円環距離</td>
+        </tr>
+        <tr>
+            <td>W_MY_PATH</td>
+            <td>112</td>
+            <td>自己継続ボーナス</td>
+        </tr>
+        <tr>
+            <td>W_OTHERS_RISK</td>
+            <td>-127</td>
+            <td>対戦相手支援リスク</td>
+        </tr>
+        <tr>
+            <td>W_SUIT_DOM</td>
+            <td>84</td>
+            <td>スート優位性</td>
+        </tr>
+        <tr>
+            <td>W_WIN_DASH</td>
+            <td>41</td>
+            <td>エンドゲームプッシュ</td>
+        </tr>
+    </table>
+</section>
+
+<section class="spec-section">
+    <h2>7. 対戦相手モデリング</h2>
+    
+    <h3>OpponentModelクラス</h3>
+    <p><strong>プレイヤーごとに追跡</strong>:</p>
+    <ul>
+        <li><code>aggressive</code>: A/Kプレイ（×2重み）</li>
+        <li><code>blocker</code>: パス回数 + 中間カードプレイ</li>
+        <li><code>tunnel_usage</code>: A/Kプレイ（まだマッチしていない場合）</li>
+        <li><code>total_actions</code>: パス以外の総移動数</li>
+    </ul>
+    
+    <h3>モード分類</h3>
+    <table class="mode-table">
+        <tr>
+            <th>モード</th>
+            <th>トリガー</th>
+            <th>対抗策</th>
+        </tr>
+        <tr>
+            <td>tunnel_lock</td>
+            <td>tunnel_usage ≥2 OR aggressive ≫ blocker</td>
+            <td>トンネルロック戦略適用</td>
+        </tr>
+        <tr>
+            <td>burst_force</td>
+            <td>pass_count ≥2 OR blocker ≫ aggressive</td>
+            <td>弱いスートを進める</td>
+        </tr>
+        <tr>
+            <td>neutral</td>
+            <td>バランス</td>
+            <td>ヒューリスティック使用</td>
+        </tr>
+    </table>
+</section>
+
+<section class="spec-section">
+    <h2>8. パフォーマンス指標</h2>
+    
+    <table class="performance-table">
+        <thead>
+            <tr>
+                <th>ベンチマーク</th>
+                <th>結果</th>
+                <th>備考</th>
+            </tr>
+        </thead>
+        <tbody>
+            <tr>
+                <td><strong>3人対戦（vs 2× ランダムAI）</strong></td>
+                <td><strong>~80% 勝率</strong></td>
+                <td>SIMULATION_COUNT=700</td>
+            </tr>
+            <tr>
+                <td>ベースライン期待値</td>
+                <td>33.3%</td>
+                <td>完全ランダム3人分割</td>
+            </tr>
+            <tr>
+                <td>優位性係数</td>
+                <td>2.4×ベースライン</td>
+                <td>最近の改善</td>
+            </tr>
+            <tr>
+                <td>1手あたり処理時間</td>
+                <td>~0.2-0.5秒</td>
+                <td>CPU（1000シミュレーション）</td>
+            </tr>
+        </tbody>
+    </table>
+</section>
+
+<section class="spec-section">
+    <h2>9. 設定パラメータ</h2>
+    
+    <table class="config-table">
+        <thead>
+            <tr>
+                <th>パラメータ</th>
+                <th>値</th>
+                <th>目的</th>
+            </tr>
+        </thead>
+        <tbody>
+            <tr>
+                <td>SIMULATION_COUNT</td>
+                <td>1000</td>
+                <td>行動ごとのメインAIシミュレーション</td>
+            </tr>
+            <tr>
+                <td>SIMULATION_DEPTH</td>
+                <td>350</td>
+                <td>ロールアウトでシミュレートする手数</td>
+            </tr>
+            <tr>
+                <td>DETERMINIZATION_ATTEMPTS</td>
+                <td>120</td>
+                <td>制約満足のためのリトライ</td>
+            </tr>
+            <tr>
+                <td>TUNNEL_LOCK_WEIGHT</td>
+                <td>3.5</td>
+                <td>トンネル戦略乗数</td>
+            </tr>
+            <tr>
+                <td>BURST_FORCE_WEIGHT</td>
+                <td>3.5</td>
+                <td>バースト強制乗数</td>
+            </tr>
+        </tbody>
+    </table>
+    
+    <h3>有効化フラグ</h3>
+    <ul>
+        <li>✅ ENABLE_TUNNEL_LOCK: True</li>
+        <li>✅ ENABLE_BURST_FORCE: True</li>
+        <li>✅ ENABLE_ONLINE_LEARNING: True</li>
+        <li>✅ ENABLE_ADVANCED_HEURISTIC: True</li>
+    </ul>
+</section>
+
+<section class="spec-section">
+    <h2>10. ファイル構成</h2>
+    
+    <table class="files-table">
+        <thead>
+            <tr>
+                <th>ファイル</th>
+                <th>目的</th>
+            </tr>
+        </thead>
+        <tbody>
+            <tr>
+                <td>src/main.py</td>
+                <td>完全AI実装（99 KB）</td>
+            </tr>
+            <tr>
+                <td>src/benchmark.py</td>
+                <td>パフォーマンス評価ランナー</td>
+            </tr>
+            <tr>
+                <td>提出用/teishutu.ipynb</td>
+                <td>Jupyter提出フォーマット</td>
+            </tr>
+            <tr>
+                <td>reference/base_game_engine.py</td>
+                <td>ゲームロジックベースライン</td>
+            </tr>
+        </tbody>
+    </table>
+    
+    <h3>エントリポイント</h3>
+    <pre><code class="language-python">my_AI(state) → returns (action, pass_flag)</code></pre>
+</section>
+
+<section class="spec-section">
+    <h2>11. アルゴリズムフロー</h2>
+    
+    <div class="algorithm-flow">
+        <pre><code>get_action(state) →
+  1. OpponentModelを初期化（必要に応じて）
+  2. 履歴からCardTrackerを構築
+  3. ゲーム状態を評価（フェーズ/緊急性/位置）
+  4. 戦略ボーナスを計算（トンネル、バースト、ヒューリスティック）
+  5. PIMCループを実行:
+     - 制約付きで120回確定化
+     - 1000回行動を完了までシミュレート
+     - 結果によるスコアリング
+  6. 戦略ボーナススケーリングを適用
+  7. 決定: 最良の行動をプレイまたはPASS</code></pre>
+    </div>
+    
+    <p><strong>時間計算量</strong>: O(シミュレーション × 深度) per move</p>
+    <p><strong>空間計算量</strong>: O(プレイヤー × カード) for tracking</p>
+</section>
+
+<section class="spec-section">
+    <h2>📚 関連ドキュメント</h2>
+    <ul>
+        <li><a href="{{ url_for('guide') }}">導入ガイド</a></li>
+        <li><a href="{{ url_for('faq') }}">よくある質問</a></li>
+        <li><a href="https://github.com/hirorogo/singyura" target="_blank">GitHubリポジトリ</a></li>
+        <li><a href="https://github.com/hirorogo/singyura/blob/main/doc/AI_TACTICS_COMPLETE.md" target="_blank">AI戦術完全ガイド</a></li>
+    </ul>
+</section>
+
+<div class="spec-footer">
+    <p><strong>ドキュメントバージョン</strong>: 1.0</p>
+    <p><strong>最終更新</strong>: 2026年1月27日</p>
+    <p><strong>AI勝率</strong>: 80%</p>
+</div>
+{% endblock %}

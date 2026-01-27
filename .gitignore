@@ -56,3 +56,12 @@ src/validation_*.py
 
 # External repositories
 coding-agent/
+
+# Flask
+instance/
+.webassets-cache
+
+# Database
+*.db
+*.sqlite
+*.sqlite3

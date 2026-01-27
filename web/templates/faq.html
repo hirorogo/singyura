@@ -1,0 +1,151 @@
+{% extends "base.html" %}
+
+{% block title %}よくある質問 (FAQ) - 七並べAI{% endblock %}
+
+{% block content %}
+<div class="page-header">
+    <h1>❓ よくある質問 (FAQ)</h1>
+    <p>七並べAIに関するよくある質問にお答えします</p>
+</div>
+
+<section class="faq-section">
+    <h2>📊 性能について</h2>
+    
+    <div class="faq-item">
+        <h3>Q: 勝率80%は本当ですか？</h3>
+        <p>
+            A: はい、ランダムAI × 2人との対戦で勝率80%を達成しています（10ゲームテスト）。
+            ただし、実際の大会はAI同士の対戦なので、勝率は50-70%程度になると予想されます。
+        </p>
+    </div>
+    
+    <div class="faq-item">
+        <h3>Q: 処理速度はどのくらいですか？</h3>
+        <p>
+            A: SIMULATION_COUNT=700の場合、1ゲームあたり約62.8秒です。
+            SIMULATION_COUNT=300に設定すれば、より高速に動作します（約20-30秒/ゲーム）。
+        </p>
+    </div>
+    
+    <div class="faq-item">
+        <h3>Q: どのような戦略を使っていますか？</h3>
+        <p>
+            A: PIMC (Perfect Information Monte Carlo) 法を採用しています。
+            相手の手札を推論し、複数の仮想世界でシミュレーションを行い、最適な手を選択します。
+        </p>
+    </div>
+</section>
+
+<section class="faq-section">
+    <h2>🔧 技術的な質問</h2>
+    
+    <div class="faq-item">
+        <h3>Q: どのファイルを使えばいいですか？</h3>
+        <p>
+            A: <code>src/submission.py</code> または <code>提出用/teishutu.ipynb</code> を使用してください。
+            これらが最新で最強のバージョンです（勝率80%達成版）。
+        </p>
+    </div>
+    
+    <div class="faq-item">
+        <h3>Q: 必要なライブラリは何ですか？</h3>
+        <p>
+            A: 基本的には <code>numpy</code> のみです。
+            GPU高速化を使いたい場合は、CuPyまたはPyTorchもインストールしてください。
+        </p>
+    </div>
+    
+    <div class="faq-item">
+        <h3>Q: Google Colab で動きますか？</h3>
+        <p>
+            A: はい、完全に対応しています。
+            <code>提出用/teishutu.ipynb</code> をGoogle Colabで開いて実行できます。
+        </p>
+    </div>
+    
+    <div class="faq-item">
+        <h3>Q: シミュレーション回数は何回が最適ですか？</h3>
+        <p>
+            A: 以下を参考にしてください：
+        </p>
+        <ul>
+            <li><strong>100回</strong>: 高速（勝率50-55%）</li>
+            <li><strong>300回</strong>: 推奨（勝率55-60%）</li>
+            <li><strong>700回</strong>: 最強（勝率80%）※処理時間増</li>
+        </ul>
+    </div>
+</section>
+
+<section class="faq-section">
+    <h2>🎮 ゲームルールについて</h2>
+    
+    <div class="faq-item">
+        <h3>Q: トンネルルールとは何ですか？</h3>
+        <p>
+            A: トンネルルールは七並べの特殊ルールです：
+        </p>
+        <ul>
+            <li>カードがAまで出た場合、そのスートはKからしか出せない</li>
+            <li>Kが出た場合、同様にAからしか出せない</li>
+        </ul>
+        <p>これにより、戦略的な封鎖・妨害要素が追加されます。</p>
+    </div>
+    
+    <div class="faq-item">
+        <h3>Q: パスは何回までできますか？</h3>
+        <p>
+            A: 1人あたり3回までです。4回目のパスをするとバースト（失格）になります。
+        </p>
+    </div>
+    
+    <div class="faq-item">
+        <h3>Q: 戦略的パスとは何ですか？</h3>
+        <p>
+            A: 出せるカードを持っている状態でも、戦略的にあえてパスすることができます。
+            このAIは、相手の状況を判断して最適なタイミングでパスを使用します。
+        </p>
+    </div>
+</section>
+
+<section class="faq-section">
+    <h2>💰 料金について</h2>
+    
+    <div class="faq-item">
+        <h3>Q: 利用料金はかかりますか？</h3>
+        <p>
+            A: このプロジェクトは基本的にオープンソースで無料です。
+            詳細は<a href="{{ url_for('pricing') }}">料金ページ</a>をご覧ください。
+        </p>
+    </div>
+</section>
+
+<section class="faq-section">
+    <h2>🆘 サポート</h2>
+    
+    <div class="faq-item">
+        <h3>Q: 問題が発生したらどうすればいいですか？</h3>
+        <p>
+            A: <a href="{{ url_for('support') }}">サポートページ</a>をご覧ください。
+            GitHubのIssuesでも質問を受け付けています。
+        </p>
+    </div>
+    
+    <div class="faq-item">
+        <h3>Q: 改善提案がある場合は？</h3>
+        <p>
+            A: GitHubでPull Requestを送っていただくか、Issuesで提案してください。
+            コミュニティからの貢献を歓迎します！
+        </p>
+    </div>
+</section>
+
+<section class="guide-section">
+    <h2>📚 関連リンク</h2>
+    <ul>
+        <li><a href="{{ url_for('guide') }}">導入ガイド</a></li>
+        <li><a href="{{ url_for('specification') }}">仕様書</a></li>
+        <li><a href="{{ url_for('support') }}">サポート</a></li>
+        <li><a href="https://github.com/hirorogo/singyura" target="_blank">GitHubリポジトリ</a></li>
+    </ul>
+</section>
+{% endblock %}
