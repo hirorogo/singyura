@@ -1,0 +1,98 @@
+{% extends "base.html" %}
+
+{% block title %}七並べAI - Singyura | トップページ{% endblock %}
+
+{% block content %}
+<div class="hero">
+    <h1>🏆 七並べAI - Singyura 🏆</h1>
+    <p class="subtitle">Singularityバトルクエスト決勝大会用AI - 勝率80%達成！</p>
+</div>
+
+<section class="features">
+    <h2>✨ 主な特徴</h2>
+    <div class="feature-grid">
+        <div class="feature-card">
+            <h3>🎯 高い勝率</h3>
+            <p>PIMC法を用いた高度なアルゴリズムで<strong>勝率80%</strong>を達成</p>
+        </div>
+        <div class="feature-card">
+            <h3>🧠 賢いAI</h3>
+            <p>相手の手札を推論し、最適な戦略で戦う</p>
+        </div>
+        <div class="feature-card">
+            <h3>⚡ 高速処理</h3>
+            <p>700回のシミュレーションでも実用的な速度を実現</p>
+        </div>
+        <div class="feature-card">
+            <h3>📊 詳細な分析</h3>
+            <p>完全な仕様書とベンチマーク結果を提供</p>
+        </div>
+    </div>
+</section>
+
+<section class="overview">
+    <h2>📋 プロジェクト概要</h2>
+    <p>
+        このプロジェクトは、トンネルルールを採用した七並べゲームで勝利するためのAIを開発しています。
+        PIMC (Perfect Information Monte Carlo) 法を用いた戦略的なAIを実装し、大会での勝利を目指します。
+    </p>
+    
+    <h3>ゲームルール</h3>
+    <ul>
+        <li><strong>3人対戦</strong>（足りない枠はランダムAIが埋める）</li>
+        <li><strong>4スーツ</strong>（♠♣♡♢）のA～Kの52枚を使用</li>
+        <li><strong>勝利条件</strong>：「カードを最も早く使い切る」または「他プレイヤーが全員失格」</li>
+        <li><strong>パス制限</strong>：1人あたり3回まで。4回目で失格（バースト）</li>
+        <li><strong>トンネルルール</strong>：Aまで出た場合はKからのみ、Kが出た場合はAからのみ出せる</li>
+    </ul>
+</section>
+
+<section class="performance">
+    <h2>📊 性能データ</h2>
+    <table class="stats-table">
+        <thead>
+            <tr>
+                <th>指標</th>
+                <th>値</th>
+                <th>備考</th>
+            </tr>
+        </thead>
+        <tbody>
+            <tr>
+                <td><strong>勝率</strong></td>
+                <td><strong>80%</strong></td>
+                <td>vs ランダムAI × 2人（10ゲームテスト）</td>
+            </tr>
+            <tr>
+                <td><strong>ベースライン比</strong></td>
+                <td><strong>+46.7%</strong></td>
+                <td>期待値33.3%から</td>
+            </tr>
+            <tr>
+                <td><strong>前回比</strong></td>
+                <td><strong>+36%</strong></td>
+                <td>44% → 80%</td>
+            </tr>
+            <tr>
+                <td><strong>シミュレーション回数</strong></td>
+                <td>700回/手</td>
+                <td>統計的信頼性最大化</td>
+            </tr>
+            <tr>
+                <td><strong>処理速度</strong></td>
+                <td>62.8秒/ゲーム</td>
+                <td>十分実用的</td>
+            </tr>
+        </tbody>
+    </table>
+</section>
+
+<section class="cta">
+    <h2>🚀 始めましょう</h2>
+    <div class="cta-buttons">
+        <a href="{{ url_for('guide') }}" class="btn btn-primary">導入ガイド</a>
+        <a href="{{ url_for('pricing') }}" class="btn btn-secondary">料金を見る</a>
+        <a href="{{ url_for('support') }}" class="btn btn-secondary">サポート</a>
+    </div>
+</section>
+{% endblock %}

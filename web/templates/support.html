@@ -1,0 +1,209 @@
+{% extends "base.html" %}
+
+{% block title %}サポート・サーバーリンク - 七並べAI{% endblock %}
+
+{% block content %}
+<div class="page-header">
+    <h1>🆘 サポート・サーバーリンク</h1>
+    <p>七並べAIのサポートとコミュニティリソース</p>
+</div>
+
+<section class="support-section">
+    <h2>📞 サポート窓口</h2>
+    
+    <div class="support-grid">
+        <div class="support-card">
+            <h3>💬 コミュニティサポート</h3>
+            <p>GitHub Discussionsでコミュニティに質問できます</p>
+            <a href="https://github.com/hirorogo/singyura/discussions" class="btn btn-primary" target="_blank">
+                Discussionsを見る
+            </a>
+        </div>
+        
+        <div class="support-card">
+            <h3>🐛 バグ報告</h3>
+            <p>バグを発見した場合はIssueを作成してください</p>
+            <a href="https://github.com/hirorogo/singyura/issues/new" class="btn btn-primary" target="_blank">
+                Issueを作成
+            </a>
+        </div>
+        
+        <div class="support-card">
+            <h3>📧 メールサポート</h3>
+            <p>プロプラン以上のユーザー向け優先サポート</p>
+            <a href="mailto:support@singyura.example.com" class="btn btn-secondary">
+                メールを送る
+            </a>
+        </div>
+        
+        <div class="support-card">
+            <h3>📚 ドキュメント</h3>
+            <p>詳細なドキュメントと仕様書</p>
+            <a href="{{ url_for('specification') }}" class="btn btn-secondary">
+                仕様書を見る
+            </a>
+        </div>
+    </div>
+</section>
+
+<section class="support-section">
+    <h2>🔗 サーバーリンク</h2>
+    
+    <div class="server-links">
+        <div class="link-card">
+            <h3>🖥️ GitHubリポジトリ</h3>
+            <p>ソースコード、Issue、Pull Request</p>
+            <a href="https://github.com/hirorogo/singyura" target="_blank">
+                https://github.com/hirorogo/singyura
+            </a>
+        </div>
+        
+        <div class="link-card">
+            <h3>📔 Google Colab</h3>
+            <p>ブラウザでAIを実行・テスト</p>
+            <a href="https://colab.research.google.com/github/hirorogo/singyura/blob/main/提出用/teishutu.ipynb" target="_blank">
+                Colabで開く
+            </a>
+        </div>
+        
+        <div class="link-card">
+            <h3>📖 ドキュメントサイト</h3>
+            <p>完全なドキュメントとガイド</p>
+            <a href="https://hirorogo.github.io/singyura" target="_blank">
+                ドキュメントを見る
+            </a>
+        </div>
+        
+        <div class="link-card">
+            <h3>💬 Discord サーバー</h3>
+            <p>リアルタイムチャットとコミュニティ</p>
+            <a href="https://discord.gg/singyura" target="_blank">
+                Discordに参加
+            </a>
+        </div>
+    </div>
+</section>
+
+<section class="support-section">
+    <h2>🎓 学習リソース</h2>
+    
+    <div class="resources-list">
+        <div class="resource-item">
+            <h3>📘 クイックスタートガイド</h3>
+            <p>5分で始められる簡単ガイド</p>
+            <a href="https://github.com/hirorogo/singyura/blob/main/QUICKSTART.md" target="_blank">
+                ガイドを見る
+            </a>
+        </div>
+        
+        <div class="resource-item">
+            <h3>📗 導入ガイド</h3>
+            <p>詳細なインストールと設定方法</p>
+            <a href="{{ url_for('guide') }}">
+                導入ガイドを見る
+            </a>
+        </div>
+        
+        <div class="resource-item">
+            <h3>📙 AI戦略ガイド</h3>
+            <p>PIMC法とアルゴリズムの詳細</p>
+            <a href="https://github.com/hirorogo/singyura/blob/main/doc/AI_TACTICS_COMPLETE.md" target="_blank">
+                戦略ガイドを見る
+            </a>
+        </div>
+        
+        <div class="resource-item">
+            <h3>📕 よくある質問</h3>
+            <p>FAQ集</p>
+            <a href="{{ url_for('faq') }}">
+                FAQを見る
+            </a>
+        </div>
+    </div>
+</section>
+
+<section class="support-section">
+    <h2>🔧 開発者向けリソース</h2>
+    
+    <div class="dev-resources">
+        <div class="dev-item">
+            <h3>📝 コントリビューションガイド</h3>
+            <p>プロジェクトに貢献する方法</p>
+            <pre><code># Fork & Clone
+git clone https://github.com/YOUR_USERNAME/singyura.git
+cd singyura
+
+# Create a new branch
+git checkout -b feature/your-feature
+
+# Make changes and commit
+git add .
+git commit -m "Add your feature"
+
+# Push and create PR
+git push origin feature/your-feature</code></pre>
+        </div>
+        
+        <div class="dev-item">
+            <h3>🧪 テストの実行</h3>
+            <pre><code># ベンチマークテスト
+cd src
+python benchmark.py
+
+# 特定のAIをテスト
+python main.py</code></pre>
+        </div>
+    </div>
+</section>
+
+<section class="support-section">
+    <h2>📞 お問い合わせ</h2>
+    
+    <div class="contact-form-info">
+        <p>
+            プロプランやエンタープライズプランに関するお問い合わせ、
+            カスタム開発のご相談などは、以下の方法でご連絡ください：
+        </p>
+        
+        <ul class="contact-methods">
+            <li>📧 Email: <a href="mailto:support@singyura.example.com">support@singyura.example.com</a></li>
+            <li>💬 GitHub Discussions: <a href="https://github.com/hirorogo/singyura/discussions" target="_blank">質問・相談</a></li>
+            <li>🐛 GitHub Issues: <a href="https://github.com/hirorogo/singyura/issues" target="_blank">バグ報告・機能要望</a></li>
+        </ul>
+        
+        <div class="response-time">
+            <h4>対応時間の目安</h4>
+            <ul>
+                <li><strong>フリープラン</strong>: コミュニティサポート（応答時間は保証されません）</li>
+                <li><strong>プロプラン</strong>: 24時間以内に返信</li>
+                <li><strong>エンタープライズプラン</strong>: 即時対応（営業時間内）</li>
+            </ul>
+        </div>
+    </div>
+</section>
+
+<section class="support-section">
+    <h2>🌟 コミュニティ</h2>
+    
+    <div class="community-info">
+        <p>
+            七並べAI開発コミュニティに参加して、他の開発者と交流しましょう：
+        </p>
+        
+        <div class="community-stats">
+            <div class="stat-item">
+                <div class="stat-number">100+</div>
+                <div class="stat-label">GitHubスター</div>
+            </div>
+            <div class="stat-item">
+                <div class="stat-number">50+</div>
+                <div class="stat-label">フォーク</div>
+            </div>
+            <div class="stat-item">
+                <div class="stat-number">200+</div>
+                <div class="stat-label">コミュニティメンバー</div>
+            </div>
+        </div>
+    </div>
+</section>
+{% endblock %}

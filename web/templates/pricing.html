@@ -1,0 +1,208 @@
+{% extends "base.html" %}
+
+{% block title %}料金プラン - 七並べAI{% endblock %}
+
+{% block content %}
+<div class="page-header">
+    <h1>💰 料金プラン</h1>
+    <p>七並べAIの利用料金について</p>
+</div>
+
+<section class="pricing-intro">
+    <div class="intro-card">
+        <h2>オープンソースプロジェクト</h2>
+        <p>
+            このプロジェクトは基本的に<strong>オープンソース</strong>で、
+            GitHubで公開されています。個人利用・学習目的であれば無料でご利用いただけます。
+        </p>
+    </div>
+</section>
+
+<section class="pricing-plans">
+    <h2>📋 プラン一覧</h2>
+    
+    <div class="pricing-grid">
+        <div class="pricing-card free">
+            <div class="plan-header">
+                <h3>🆓 フリープラン</h3>
+                <div class="price">
+                    <span class="amount">¥0</span>
+                    <span class="period">/月</span>
+                </div>
+            </div>
+            <ul class="features-list">
+                <li>✅ ソースコード全体へのアクセス</li>
+                <li>✅ 基本的なAI機能（勝率55-60%）</li>
+                <li>✅ ドキュメント閲覧</li>
+                <li>✅ コミュニティサポート</li>
+                <li>✅ SIMULATION_COUNT最大300</li>
+                <li>✅ 個人利用・学習目的</li>
+            </ul>
+            <a href="https://github.com/hirorogo/singyura" class="btn btn-secondary" target="_blank">GitHubで取得</a>
+        </div>
+        
+        <div class="pricing-card pro">
+            <div class="plan-header">
+                <div class="badge">人気</div>
+                <h3>⭐ プロプラン</h3>
+                <div class="price">
+                    <span class="amount">¥2,980</span>
+                    <span class="period">/月</span>
+                </div>
+            </div>
+            <ul class="features-list">
+                <li>✅ フリープランの全機能</li>
+                <li>✅ 最強AI機能（勝率80%）</li>
+                <li>✅ SIMULATION_COUNT無制限</li>
+                <li>✅ GPU高速化サポート</li>
+                <li>✅ 優先サポート（24時間以内返信）</li>
+                <li>✅ カスタマイズ相談</li>
+                <li>✅ 商用利用可能</li>
+            </ul>
+            <a href="{{ url_for('support') }}" class="btn btn-primary">お問い合わせ</a>
+        </div>
+        
+        <div class="pricing-card enterprise">
+            <div class="plan-header">
+                <h3>🏢 エンタープライズプラン</h3>
+                <div class="price">
+                    <span class="amount">要相談</span>
+                </div>
+            </div>
+            <ul class="features-list">
+                <li>✅ プロプランの全機能</li>
+                <li>✅ カスタムAI開発</li>
+                <li>✅ 専任サポート担当</li>
+                <li>✅ SLA保証</li>
+                <li>✅ オンサイトサポート</li>
+                <li>✅ API統合サポート</li>
+                <li>✅ トレーニング・コンサルティング</li>
+            </ul>
+            <a href="{{ url_for('support') }}" class="btn btn-secondary">お問い合わせ</a>
+        </div>
+    </div>
+</section>
+
+<section class="pricing-features">
+    <h2>📊 機能比較表</h2>
+    <div class="comparison-table-wrapper">
+        <table class="comparison-table">
+            <thead>
+                <tr>
+                    <th>機能</th>
+                    <th>フリー</th>
+                    <th>プロ</th>
+                    <th>エンタープライズ</th>
+                </tr>
+            </thead>
+            <tbody>
+                <tr>
+                    <td>ソースコードアクセス</td>
+                    <td>✅</td>
+                    <td>✅</td>
+                    <td>✅</td>
+                </tr>
+                <tr>
+                    <td>基本AI（勝率55-60%）</td>
+                    <td>✅</td>
+                    <td>✅</td>
+                    <td>✅</td>
+                </tr>
+                <tr>
+                    <td>最強AI（勝率80%）</td>
+                    <td>❌</td>
+                    <td>✅</td>
+                    <td>✅</td>
+                </tr>
+                <tr>
+                    <td>SIMULATION_COUNT</td>
+                    <td>最大300</td>
+                    <td>無制限</td>
+                    <td>無制限</td>
+                </tr>
+                <tr>
+                    <td>GPU高速化</td>
+                    <td>❌</td>
+                    <td>✅</td>
+                    <td>✅</td>
+                </tr>
+                <tr>
+                    <td>サポート応答時間</td>
+                    <td>コミュニティ</td>
+                    <td>24時間以内</td>
+                    <td>即時対応</td>
+                </tr>
+                <tr>
+                    <td>商用利用</td>
+                    <td>❌</td>
+                    <td>✅</td>
+                    <td>✅</td>
+                </tr>
+                <tr>
+                    <td>カスタムAI開発</td>
+                    <td>❌</td>
+                    <td>❌</td>
+                    <td>✅</td>
+                </tr>
+                <tr>
+                    <td>SLA保証</td>
+                    <td>❌</td>
+                    <td>❌</td>
+                    <td>✅</td>
+                </tr>
+            </tbody>
+        </table>
+    </div>
+</section>
+
+<section class="pricing-faq">
+    <h2>💬 料金に関するよくある質問</h2>
+    
+    <div class="faq-item">
+        <h3>Q: フリープランでも十分使えますか？</h3>
+        <p>
+            A: はい、学習目的や個人的な使用であれば、フリープランで十分です。
+            基本的なAI機能（勝率55-60%）を利用できます。
+        </p>
+    </div>
+    
+    <div class="faq-item">
+        <h3>Q: プロプランの支払い方法は？</h3>
+        <p>
+            A: クレジットカード、銀行振込に対応しています。
+            詳細は<a href="{{ url_for('support') }}">サポートページ</a>からお問い合わせください。
+        </p>
+    </div>
+    
+    <div class="faq-item">
+        <h3>Q: いつでもプランを変更できますか？</h3>
+        <p>
+            A: はい、いつでもアップグレード・ダウングレードが可能です。
+        </p>
+    </div>
+    
+    <div class="faq-item">
+        <h3>Q: 学生割引はありますか？</h3>
+        <p>
+            A: はい、学生の方はプロプランを50%割引でご利用いただけます。
+            学生証の提示が必要です。
+        </p>
+    </div>
+    
+    <div class="faq-item">
+        <h3>Q: 返金保証はありますか？</h3>
+        <p>
+            A: 30日間の返金保証があります。
+            ご満足いただけない場合は、全額返金いたします。
+        </p>
+    </div>
+</section>
+
+<section class="cta">
+    <h2>🚀 今すぐ始めましょう</h2>
+    <div class="cta-buttons">
+        <a href="https://github.com/hirorogo/singyura" class="btn btn-primary" target="_blank">無料で始める</a>
+        <a href="{{ url_for('support') }}" class="btn btn-secondary">プロプランを相談</a>
+    </div>
+</section>
+{% endblock %}

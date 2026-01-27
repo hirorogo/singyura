@@ -1,0 +1,128 @@
+{% extends "base.html" %}
+
+{% block title %}ボット導入ガイド - 七並べAI{% endblock %}
+
+{% block content %}
+<div class="page-header">
+    <h1>🤖 ボット導入ガイド</h1>
+    <p>七並べAIの導入方法を詳しく説明します</p>
+</div>
+
+<section class="guide-section">
+    <h2>📦 必要な環境</h2>
+    <div class="requirements">
+        <h3>必須</h3>
+        <ul>
+            <li>Python 3.7以上</li>
+            <li>numpy</li>
+        </ul>
+        
+        <h3>オプション（開発用）</h3>
+        <ul>
+            <li>CuPy (GPU高速化用)</li>
+            <li>PyTorch (GPU高速化用)</li>
+        </ul>
+    </div>
+</section>
+
+<section class="guide-section">
+    <h2>🔧 インストール手順</h2>
+    
+    <h3>ステップ 1: リポジトリのクローン</h3>
+    <pre><code>git clone https://github.com/hirorogo/singyura.git
+cd singyura</code></pre>
+    
+    <h3>ステップ 2: 依存パッケージのインストール</h3>
+    <pre><code># 必須パッケージのみ
+pip install numpy
+
+# GPU開発用（オプション）
+pip install cupy-cuda12x  # NVIDIA GPU
+# または
+pip install torch  # NVIDIA/Apple Silicon</code></pre>
+    
+    <h3>ステップ 3: 動作確認</h3>
+    <pre><code># スクリプト版を実行
+python src/submission.py
+
+# ベンチマーク実行
+cd src
+python benchmark.py</code></pre>
+</section>
+
+<section class="guide-section">
+    <h2>📓 Jupyter Notebook での使用</h2>
+    
+    <h3>ローカル環境</h3>
+    <pre><code># Jupyter Notebookで開く
+jupyter notebook 提出用/teishutu.ipynb</code></pre>
+    
+    <h3>Google Colab での使用</h3>
+    <ol>
+        <li>Google Colab にアクセス</li>
+        <li>GitHubから直接開く：<code>File &gt; Open notebook &gt; GitHub</code></li>
+        <li><code>hirorogo/singyura</code> で検索</li>
+        <li><code>提出用/teishutu.ipynb</code> を選択</li>
+    </ol>
+</section>
+
+<section class="guide-section">
+    <h2>⚙️ 設定のカスタマイズ</h2>
+    
+    <h3>シミュレーション回数の調整</h3>
+    <pre><code># submission.py または teishutu.ipynb 内で
+SIMULATION_COUNT = 300  # 推奨値
+
+# パフォーマンスガイド:
+# 100:  高速（勝率50-55%）
+# 300:  推奨（勝率55-60%）
+# 700:  最強（勝率80%）※処理時間増</code></pre>
+    
+    <h3>Phase 1改善フラグ</h3>
+    <pre><code>ENABLE_PASS_REMOVAL = True              # PASS除外
+ENABLE_WEIGHTED_DETERMINIZATION = True  # 重み付け確定化
+ENABLE_ADAPTIVE_ROLLOUT = True          # 適応的ロールアウト</code></pre>
+</section>
+
+<section class="guide-section">
+    <h2>🎯 使い方</h2>
+    
+    <h3>1. AIの実装</h3>
+    <p><code>my_AI</code> 関数が既に実装されています。この関数が各ターンで呼び出されます。</p>
+    
+    <h3>2. テスト実行</h3>
+    <pre><code># ベンチマークでAIをテスト
+cd src
+python benchmark.py</code></pre>
+    
+    <h3>3. 大会への提出</h3>
+    <p>Google Colab で <code>提出用/teishutu.ipynb</code> を実行し、my_AIセルのコードをコピーして提出してください。</p>
+</section>
+
+<section class="guide-section">
+    <h2>❓ トラブルシューティング</h2>
+    
+    <div class="troubleshooting">
+        <h3>エラー: ModuleNotFoundError</h3>
+        <pre><code>pip install numpy</code></pre>
+        
+        <h3>メモリ不足</h3>
+        <pre><code># SIMULATION_COUNT を減らす
+SIMULATION_COUNT = 100</code></pre>
+        
+        <h3>動作が遅い</h3>
+        <pre><code># シミュレーション回数を減らす
+SIMULATION_COUNT = 100</code></pre>
+    </div>
+</section>
+
+<section class="guide-section">
+    <h2>📚 関連リンク</h2>
+    <ul>
+        <li><a href="{{ url_for('faq') }}">よくある質問 (FAQ)</a></li>
+        <li><a href="{{ url_for('specification') }}">仕様書</a></li>
+        <li><a href="{{ url_for('support') }}">サポート</a></li>
+        <li><a href="https://github.com/hirorogo/singyura" target="_blank">GitHubリポジトリ</a></li>
+    </ul>
+</section>
+{% endblock %}
