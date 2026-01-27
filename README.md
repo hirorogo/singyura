@@ -16,6 +16,35 @@ Singularityバトルクエスト決勝大会「AI 7並べ (XQ)」用の高度な
 - **[クイックスタート](QUICKSTART.md)** - 5分で始める
 - **[プロジェクト構造](PROJECT_STRUCTURE.md)** - ディレクトリ構成
 - **[80%達成レポート](AI_IMPROVEMENT_REPORT_2026_01_20.md)** - 詳細レポート
+- **[🌐 Webサイト起動](web/README.md)** - ドキュメント・広告統合サイト
+
+---
+
+## 🌐 **NEW! Webサイト**
+
+プロジェクトのドキュメント、FAQ、料金情報などを提供するWebサイトを追加しました！
+
+```bash
+# Webサーバーを起動
+./start_web_server.sh
+
+# または手動で
+cd web
+pip install -r requirements.txt
+python app.py
+```
+
+**アクセス**: http://localhost:5000
+
+**提供ページ**:
+- 📄 トップページ - プロジェクト概要
+- 📖 導入ガイド - インストール・設定方法
+- ❓ FAQ - よくある質問
+- 💰 料金プラン - フリー/プロ/エンタープライズ
+- 🆘 サポート - コミュニティリソース
+- 📋 技術仕様書 - リバースエンジニアリング完全版
+
+**広告統合**: ExoClick広告対応（設定方法は [web/README.md](web/README.md) 参照）
 
 ---
 
@@ -92,6 +121,25 @@ singyura/
 ├── submission.py              # Python スクリプト版（開発・テスト用）
 ├── README.md                  # このファイル
 ├── QUICKSTART.md              # クイックスタートガイド
+├── start_web_server.sh        # 🌐 Webサーバー起動スクリプト
+│
+├── web/                       # 🌐 Webサイト（NEW!）
+│   ├── app.py                # Flaskアプリケーション
+│   ├── requirements.txt      # Flask依存パッケージ
+│   ├── README.md             # Webサーバーのドキュメント
+│   ├── templates/            # HTMLテンプレート
+│   │   ├── base.html        # ベーステンプレート
+│   │   ├── index.html       # トップページ
+│   │   ├── guide.html       # 導入ガイド
+│   │   ├── faq.html         # FAQ
+│   │   ├── pricing.html     # 料金プラン
+│   │   ├── support.html     # サポート
+│   │   └── specification.html # 技術仕様書
+│   └── static/              # 静的ファイル
+│       ├── css/
+│       │   └── style.css    # スタイルシート
+│       └── js/
+│           └── main.js      # JavaScript
 │
 ├── src/                       # 開発用ソースコード
 │   ├── main.py               # オリジナル版AI
